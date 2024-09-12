@@ -17,11 +17,12 @@ def schedule(in_circ, node_map, node_array=None):
 
 def map_to_nodes(num_nodes, in_circ):
     qubit_to_node = dict()
+    num_qubits = len(in_circ.all_qubits())
     node_array = []
     if num_nodes == 0:
-        num_nodes = DEFAULT_QUBITS_PER_NODE * len(in_circ.all_qubits())
+        num_nodes = min(DEFAULT_QUBITS_PER_NODE * num_qubits, num_qubits)
 
-    qubits_per_node = len(in_circ.all_qubits()) // num_nodes
+    qubits_per_node = num_qubits // num_nodes
     for idx, q in enumerate(in_circ.all_qubits()):
         qubit_to_node[q] = idx // qubits_per_node
         node_array.append(idx // qubits_per_node)
@@ -46,14 +47,14 @@ def main(raw_input, in_type, num_nodes=0):
     node_map, node_arr = map_to_nodes(num_nodes, input_circuit)
 
 
-    agg_circuit = aggregate(input_circuit)
-    print(agg_circuit, node_map)
+    agg_circuit = aggregate(input_circuit, node_map)
+    print(agg_circuit)
 
-    assigned_circuit = assign(agg_circuit)
-    print(assigned_circuit, node_map)
+    assigned_circuit = assign(agg_circuit, node_map)
+    print(assigned_circuit)
 
-    scheduled_circuit = schedule(assigned_circuit)
-    print(scheduled_circuit, node_map)
+    scheduled_circuit = schedule(assigned_circuit, node_map)
+    print(scheduled_circuit)
 
     return scheduled_circuit
 
