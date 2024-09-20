@@ -5,6 +5,7 @@ import cirq.contrib.qasm_import
 from cirq.circuits import InsertStrategy
 
 from data_structures import Pair
+from qubit_partition import pymetis_partition
 from util import dict_append, dict_num_add
 
 DEFAULT_QUBITS_PER_NODE = 2
@@ -286,19 +287,27 @@ def schedule(in_circ, tp_pair_blocks, cat_pair_blocks):
 
     return out_circ, (concurrent_tps, concurrent_cats)
 
-def map_to_nodes(num_nodes, in_circ):
-    qubit_to_node = dict()
-    num_qubits = len(in_circ.all_qubits())
-    node_array = []
+def map_to_nodes(num_nodes, circ):
+    num_qubits = len(circ.all_qubits())
     if num_nodes == 0:
         num_nodes = min(DEFAULT_QUBITS_PER_NODE * num_qubits, num_qubits)
 
+    qubit_to_node, _ = pymetis_partition(circ, num_nodes)
+    return qubit_to_node
+
+
+def trivial_mapping(num_qubits, circ):
+    qubit_to_node = dict()
+    node_array = []
     qubits_per_node = num_qubits // num_nodes
-    for idx, q in enumerate(in_circ.all_qubits()):
+    for idx, q in enumerate(circ.all_qubits()):
         qubit_to_node[q] = idx // qubits_per_node
         node_array.append(idx // qubits_per_node)
 
     return qubit_to_node, node_array
+
+
+
 
 
 
@@ -315,7 +324,7 @@ def main(raw_input, in_type, num_nodes=0):
         input = raw_input
     
     input_circuit = import_circuit(input, in_type)
-    node_map, _ = map_to_nodes(num_nodes, input_circuit)
+    node_map = map_to_nodes(num_nodes, input_circuit)
 
 
     pair_to_blocks, pair_to_ops, agg_circuit = aggregate(input_circuit, node_map)

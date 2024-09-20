@@ -40,7 +40,7 @@ def pymetis_partition(circ: cirq.Circuit, num_nodes: int):
 
 
 
-    ncuts, membership = pymetis.part_graph(num_nodes, xadj=adj_loc, adjncy=adj, eweights=weights)
+    ncuts, membership = pymetis.part_graph(num_nodes, xadj=adj_loc, adjncy=adjs, eweights=weights)
     print(f'Number of cuts from pymetis: {ncuts}.\nMembership: {membership}')
 
     node_to_qubits = dict()
