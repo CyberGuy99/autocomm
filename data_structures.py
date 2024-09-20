@@ -25,10 +25,14 @@ class Pair:
     def get_q_node(self):
         return self.qubit_node
     
-    # first in tuple is the control, second is the target
+    def get_ctrl_q(self):
+        return self.qubit if self.is_ctrl else self.node_qubit
+
+    def get_targ_q(self):
+        return self.node_qubit if self.is_ctrl else self.qubit
+    
     def get_op_tuple(self):
-        return (self.qubit, self.node_qubit, self.layer_idx) if self.is_ctrl \
-              else (self.node_qubit, self.qubit, self.layer_idx)
+        return (self.get_ctrl_q(), self.get_targ_q())
 
 class Block:
     pairs: list[Pair] = [] # collection of 2-qubit ops and their metadat

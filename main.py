@@ -162,22 +162,14 @@ def aggregate(in_circ, node_map, node_array=None):
 
     return pair_to_merged, rem_pairs, out_circ
 
-def is_bidirectional(q1, block):
+def is_bidirectional(block):
     assert len(block) > 0
     if len(block) == 1:
         return False
 
-    direction = block[0][1]
-    ctrls = []
-
-    bidirectional = False
-    for q2, q1_ctrl, _, _ in block:
-        ctrls.append(q1 if q1_ctrl else q2)
-
-        # if at least one direction is diff from the first, bi=True
-        if q1_ctrl != direction:
-            bidirectional = True
-
+    ctrls = [pair.get_ctrl_q() for pair in block]
+    directions = [pair.is_ctrl for pair in block]
+    bidirectional = not all(directions) and any(directions) # not all True and one is True
     return bidirectional, ctrls
 
 
@@ -218,15 +210,14 @@ def check_unidirectional(block_idxs, ctrls, circ):
     return False
 
 
-def assign(in_circ, pair_to_blocks, pair_to_ops, node_array=None):
+def assign(in_circ, pair_to_blocks, pair_to_ops):
     out_circ = in_circ.copy()
     tp_assign = dict() # KEY: ((q, node), block_index), VALUE: True or False
     for pair, blocks in pair_to_blocks.items():
         # block is a collection of op indices, typically consecutive
         for idx, block in enumerate(blocks):
             block_details = [pair_to_ops[pair][p] for p in block] # redundant indexing, it is given that they are consecutive
-            q1, node = pair
-            bi, ctrls = is_bidirectional(q1, block_details)
+            bi, ctrls = is_bidirectional(block_details)
 
             if bi:
                 tp_assign[(pair, idx)] = True # TP-COM
