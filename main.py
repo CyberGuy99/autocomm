@@ -4,15 +4,11 @@ import cirq
 import cirq.contrib.qasm_import
 from cirq.circuits import InsertStrategy
 
-from data_structures import Block, Pair
+from data_structures import Pair
+from util import dict_append, dict_num_add
 
 DEFAULT_QUBITS_PER_NODE = 2
 VERBOSE = True
-
-def dict_append(d, key, append_value):
-    if key not in d:
-        d[key] = []
-    d[key].append(append_value)
 
 
 def commutes(op, left_op, right_op):
@@ -229,58 +225,50 @@ def assign(in_circ, pair_to_blocks, pair_to_ops):
     return tp_assign, out_circ
 
 NUM_COMM_NODES = 2
-def must_serialize_cat(first_block, second_block, node_map, usage):
-    (q1_1, node2_1), _ = first_block[0]
-    (q1_2, node2_2), _ = second_block[0]
-    assert not (q1_1 == q1_2 and node2_1 == node2_2)
+def must_serialize_cat(first_pair, second_pair, node_map, usage):
+    assert not (first_pair.qubit == second_pair.qubit and first_pair.node == second_pair.node)
 
-    if q1_1 == q1_2:
+    if first_pair.qubit == second_pair.qubit:
         # must be on different nodes, same qubit cannot be sent to two diff nodes concurrently
         return True
     
-    node1_1 = node_map[q1_1]
-    node1_2 = node_map[q1_2]
-    if node1_1 != node1_2 and node2_1 != node2_2:
+    nodes = [first_pair.node, second_pair.node, first_pair.qubit_node, second_pair.qubit_node]
+    if nodes[0] != nodes[1] and nodes[2] != nodes[3]:
         # totally independent
         return False
 
     # must count 
-    return usage[node1_1] < NUM_COMM_NODES and usage[node1_2] < NUM_COMM_NODES \
-            and usage[node2_1] < NUM_COMM_NODES and usage[node2_2] < NUM_COMM_NODES
+    return all([usage(node) < NUM_COMM_NODES for node in nodes])
 
 
 def must_serialize_tp(first_block, second_block, node_map, usage):
     return must_serialize_cat(first_block, second_block, node_map, usage)
 
-def greedy_schedule(blocks, node_map, is_tp):
+def greedy_schedule(blocks, is_tp):
     concurrents = [] # array of arrays, each subarray has consecutive block indices
     visited_blocks = set()
-    for idx, block_info in enumerate(blocks):
+    for idx, block in enumerate(blocks):
         if idx in visited_blocks:
             continue
         concurrents.append[ [idx] ]
         visited_blocks.add(idx)
 
         usage = dict()
-        q1_1, node2_1 = block_info[0] # first pair in the block is fine, they all have same (q, node)
-        usage[node_map[q1_1]] = 1
-        usage[node2_1] = 1
+        curr_pair = block[0]
+        usage[curr_pair.qubit_node] = 1 # node the qubit belongs to
+        usage[curr_pair.node] = 1 # main node
 
         for idx_next in range(idx+1, blocks):
-            next_block_info = blocks[idx_next]
-            if (is_tp and must_serialize_tp(block_info, next_block_info, node_map, usage)) \
-                    or (not is_tp and must_serialize_cat(block_info, next_block_info, node_map, usage)):
+            next_pair = blocks[idx_next][0]
+            if (is_tp and must_serialize_tp(curr_pair, next_pair, usage)) \
+                    or (not is_tp and must_serialize_cat(curr_pair, next_pair, usage)):
                 break
 
+            curr_qubit_node = next_pair.qubit_node
+            curr_main_node = next_pair.node
 
-            q2_1, node2_2 = next_block_info[0]
-            if node_map[q2_1] not in usage:
-                node_map[q2_1] = 0
-            usage[node_map[q2_1]] += 1
-
-            if node_map[node2_2] not in usage:
-                node_map[node2_2] = 0
-            usage[node2_2] += 1
+            dict_num_add(usage, key=curr_qubit_node, add_value=1)
+            dict_num_add(usage, key=curr_main_node, add_value=1)
 
             concurrents[-1].append(idx_next)
             visited_blocks.add(idx_next)
@@ -290,11 +278,11 @@ def greedy_schedule(blocks, node_map, is_tp):
 
 
 
-def schedule(in_circ, tp_pair_blocks, cat_pair_blocks, node_map):
+def schedule(in_circ, tp_pair_blocks, cat_pair_blocks):
     out_circ = in_circ.copy() # circuit should stay the same, only changing metadata (comm schedule)
 
-    concurrent_cats = greedy_schedule(cat_pair_blocks, node_map, is_tp=False) 
-    concurrent_tps = greedy_schedule(tp_pair_blocks, node_map, is_tp=True) 
+    concurrent_cats = greedy_schedule(cat_pair_blocks, is_tp=False) 
+    concurrent_tps = greedy_schedule(tp_pair_blocks, is_tp=True) 
 
     return out_circ, (concurrent_tps, concurrent_cats)
 
@@ -327,7 +315,7 @@ def main(raw_input, in_type, num_nodes=0):
         input = raw_input
     
     input_circuit = import_circuit(input, in_type)
-    node_map, node_arr = map_to_nodes(num_nodes, input_circuit)
+    node_map, _ = map_to_nodes(num_nodes, input_circuit)
 
 
     pair_to_blocks, pair_to_ops, agg_circuit = aggregate(input_circuit, node_map)
@@ -343,8 +331,8 @@ def main(raw_input, in_type, num_nodes=0):
 
     # indexing into the list of block *indices* for each pair, using idx
     # using pair_to_ops to get the block details from each (pair, block_idx)
-    tp_blocks = [(pair, pair_to_ops[pair][pair_to_blocks[pair][idx]]) for (pair, idx), is_tp in assignments.items() if is_tp]
-    cat_blocks = [(pair, pair_to_ops[pair][pair_to_blocks[pair][idx]]) for (pair, idx), is_tp in assignments.items() if not is_tp]
+    tp_blocks = [(q_and_node, pair_to_ops[q_and_node][pair_to_blocks[q_and_node][idx]]) for (q_and_node, idx), is_tp in assignments.items() if is_tp]
+    cat_blocks = [(q_and_node, pair_to_ops[q_and_node][pair_to_blocks[q_and_node][idx]]) for (q_and_node, idx), is_tp in assignments.items() if not is_tp]
 
     scheduled_circuit, concurrent_tps, concurrent_cats = schedule(assigned_circuit, tp_blocks, cat_blocks)
     print(scheduled_circuit)
