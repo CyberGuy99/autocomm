@@ -35,9 +35,6 @@ def move_gate_to(layer_idx, gate, circ, new_layer):
     circ.batch_remove([(layer_idx, gate)])
     circ.insert(gate, new_layer, strategy=InsertStrategy.Inline)
 
-
-
-
 # subroutine for aggregating blocks
 def merge(q1, left_pair, right_pair, circ):
     temp_circ = circ.copy()
@@ -54,13 +51,13 @@ def merge(q1, left_pair, right_pair, circ):
             commute_check = commutes(curr_op, left_op, right_op)
             
             if commute_check == 0:
-                return False, left_block, circ # merge failed
+                return False, circ # merge failed
             if commute_check == 1 or commute_check == 3:
                 move_gate_by(layer_idx, curr_op, temp_circ)
             if commute_check == 2:
                 move_gate_by(layer_idx, curr_op, temp_circ, delta=1)
 
-    return True, left_block + right_block, temp_circ
+    return True, temp_circ
 
 def aggregate(in_circ, node_map, node_array=None):
 
@@ -98,7 +95,7 @@ def aggregate(in_circ, node_map, node_array=None):
     #         max_pair = pair
     pair_queue = sorted(rem_pairs, key = lambda p: len(rem_pairs[p]), reverse=True)
     if len(pair_queue) == 0:
-        return in_circ.copy()
+        return in_circ.copy(), None, None
 
     max_pair_len = len(rem_pairs[pair_queue[0]])
     if VERBOSE:
@@ -109,7 +106,7 @@ def aggregate(in_circ, node_map, node_array=None):
     # KEY: (q,node)
     # VALUE: [block_1 ... block_n] where each block_i is a list of operations [(q1, q2)_1 ... (q1, q2)_m] 
     pair_to_merged = dict() 
-    visted_ops = set() # all op that have been added to the above dict
+    visited_ops = set() # all op that have been added to the above dict
     out_circ = in_circ.copy()
     
     for q1, node in pair_queue:
@@ -158,13 +155,14 @@ def aggregate(in_circ, node_map, node_array=None):
 
             block_modified = block
             for idx_next in range(idx+1, len(comm_blocks)):
-                left_pair = pairs[block[-1]]
-                right_pair = pairs[comm_blocks[idx_next][0]]
+                left_block = block[-1]
+                right_block = comm_blocks[idx_next][0]
 
-                did_merge, block_modified, out_circ = merge(q1, left_pair, right_pair, out_circ)
+                did_merge, out_circ = merge(q1, pairs[left_block], pairs[right_block], out_circ)
                 if not did_merge:
                     merged_blocks.append(block_modified)
                     break
+                block_modified = left_block + right_block
                 visited_blocks.add(idx_next)
 
         pair_to_merged[(q1, node)] = merged_blocks
@@ -179,7 +177,7 @@ def is_bidirectional(q1, block):
     direction = block[0][1]
     ctrls = []
 
-    birectional = False
+    bidirectional = False
     for q2, q1_ctrl, _, _ in block:
         ctrls.append(q1 if q1_ctrl else q2)
 
@@ -199,15 +197,22 @@ def single_X_interferes(op, ctrl):
     return op.gate not in commuting_singles, True
 
 # checks if there exits single qubit gates that cannot commute
-def check_unidirectional(l_layer, r_layer, ctrls, circ):
+def check_unidirectional(block_idxs, ctrls, circ):
     commuting_gates = [] # [(op, layer_idx)_k]
 
+    l_layer = block_idxs[0]
+    r_layer = block_idxs[-1]
+    recent_block_idx = 0
     for layer_idx in range(l_layer+1, r_layer):
+        # if we have moved past the next block, update the recent index
+        if layer_idx > block_idxs[recent_block_idx + 1]:
+            recent_block_idx += 1
+
         for op in circ[layer_idx]:
             if len(op.qubits) > 1:
                 continue
 
-            noncommuting, should_move = unzip([single_X_interferes(op, ctrl) for ctrl in ctrls[:recent_block_index+1]])
+            noncommuting, should_move = zip(*[single_X_interferes(op, ctrl) for ctrl in ctrls[:recent_block_idx+1]])
             if any(noncommuting):
                 return True
 
@@ -234,10 +239,12 @@ def assign(in_circ, pair_to_blocks, pair_to_ops, node_array=None):
                 tp_assign[(pair, idx)] = True # TP-COM
             else:
                 # check for single qubit gates on ctrls in the block 
-                tp_assign[(pair, idx)] = check_unidrectional(block_details[0].layer, block_details[-1].layer, ctrls, out_circ)
+                block_idxs = [b.layer_idx for b in block_details]
+                tp_assign[(pair, idx)] = check_unidirectional(block_idxs, ctrls, out_circ)
 
     return tp_assign, out_circ
 
+NUM_COMM_NODES = 2
 def must_serialize_cat(first_block, second_block, node_map, usage):
     (q1_1, node2_1), _ = first_block[0]
     (q1_2, node2_2), _ = second_block[0]
@@ -249,12 +256,13 @@ def must_serialize_cat(first_block, second_block, node_map, usage):
     
     node1_1 = node_map[q1_1]
     node1_2 = node_map[q1_2]
-    if node1_1 != node1_2 and node_1 != node_2:
+    if node1_1 != node1_2 and node2_1 != node2_2:
         # totally independent
         return False
 
     # must count 
-    return usage[node1_1] < 2 and usage[node1_2] < 2 and usage[node2_1] < 2 and usage[node2_2] < 2
+    return usage[node1_1] < NUM_COMM_NODES and usage[node1_2] < NUM_COMM_NODES \
+            and usage[node2_1] < NUM_COMM_NODES and usage[node2_2] < NUM_COMM_NODES
 
 
 def must_serialize_tp(first_block, second_block, node_map, usage):
@@ -293,7 +301,7 @@ def greedy_schedule(blocks, node_map, is_tp):
             concurrents[-1].append(idx_next)
             visited_blocks.add(idx_next)
 
-    return concurrentts
+    return concurrents
 
 
 
@@ -339,6 +347,11 @@ def main(raw_input, in_type, num_nodes=0):
 
 
     pair_to_blocks, pair_to_ops, agg_circuit = aggregate(input_circuit, node_map)
+    if not agg_circuit:
+        print('Invalid Input Circuit')
+        print(input_circuit)
+        return
+
     print(agg_circuit)
 
     assignments, assigned_circuit = assign(agg_circuit, pair_to_blocks, pair_to_ops)
@@ -346,11 +359,13 @@ def main(raw_input, in_type, num_nodes=0):
 
     # indexing into the list of block *indices* for each pair, using idx
     # using pair_to_ops to get the block details from each (pair, block_idx)
-    tp_blocks = [pair, pair_to_ops[pair][pair_to_blocks[pair][idx]] for (pair, idx), is_tp in assignments.items() if is_tp]
-    cat_blocks = [pair, pair_to_ops[pair][pair_to_blocks[pair][idx]] for (pair, idx), is_tp in assignments.items() if not is_tp]
+    tp_blocks = [(pair, pair_to_ops[pair][pair_to_blocks[pair][idx]]) for (pair, idx), is_tp in assignments.items() if is_tp]
+    cat_blocks = [(pair, pair_to_ops[pair][pair_to_blocks[pair][idx]]) for (pair, idx), is_tp in assignments.items() if not is_tp]
 
-    scheduled_circuit = schedule(assigned_circuit, tp_blocks, cat_blocks)
+    scheduled_circuit, concurrent_tps, concurrent_cats = schedule(assigned_circuit, tp_blocks, cat_blocks)
     print(scheduled_circuit)
+    print(concurrent_tps)
+    print(concurrent_cats)
 
     return scheduled_circuit
 
