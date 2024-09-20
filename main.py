@@ -4,6 +4,8 @@ import cirq
 import cirq.contrib.qasm_import
 from cirq.circuits import InsertStrategy
 
+from data_structures import Block, Pair
+
 DEFAULT_QUBITS_PER_NODE = 2
 VERBOSE = True
 
@@ -36,17 +38,14 @@ def move_gate_to(layer_idx, gate, circ, new_layer):
     circ.insert(gate, new_layer, strategy=InsertStrategy.Inline)
 
 # subroutine for aggregating blocks
-def merge(q1, left_pair, right_pair, circ):
+def merge(left_pair, right_pair, circ):
     temp_circ = circ.copy()
 
     # check commutation rules and in-between gates to see if blocks can merge
-    q2_l, is_ctrl_l, layer_l, _ = left_pair
-    q2_r, is_ctrl_r, layer_r, _ = right_pair
 
-
-    left_op = (q1, q2_l) if is_ctrl_l else (q2_l, q1)
-    right_op = (q1, q2_r) if is_ctrl_r else (q2_r, q1)
-    for layer_idx in range(layer_l + 1, layer_r):
+    left_op = left_pair.get_op_tuple() 
+    right_op = right_pair.get_op_tuple()
+    for layer_idx in range(left_pair.layer_idx + 1, right_pair.layer_idx):
         for curr_op in circ[layer_idx]:
             commute_check = commutes(curr_op, left_op, right_op)
             
@@ -63,7 +62,7 @@ def aggregate(in_circ, node_map, node_array=None):
 
     # identify qubit-node pair with most remote gates
     rem_pairs = dict()
-    qubit_ops = dict() # not used much, mostly debugging
+    qubit_ops = dict() # unused, debugging
 
     for layer_idx, layer in enumerate(in_circ):
         for op in layer:
@@ -83,16 +82,12 @@ def aggregate(in_circ, node_map, node_array=None):
             dict_append(qubit_ops, targ, (ctrl, False))
 
             # appending useful information
-            dict_append(rem_pairs, (ctrl, targ_node), (targ,True,layer_idx, len(qubit_ops[ctrl])-1) )
-            dict_append(rem_pairs, (targ, ctrl_node), (ctrl,False,layer_idx, len(qubit_ops[targ])-1) )
+            ctrl_pair = Pair(ctrl, targ_node, ctrl_node, targ, True, layer_idx)
+            targ_pair = Pair(targ, ctrl_node, targ_node, ctrl, False, layer_idx)
+            dict_append(rem_pairs, (ctrl, targ_node), ctrl_pair)
+            dict_append(rem_pairs, (targ, ctrl_node), targ_pair)
 
    
-    # max_pair_len = -1
-    # max_pair = None
-    # for pair, num_pairs in rem_pairs.items():
-    #     if max_pair_len < len(num_pairs):
-    #         max_pair_len = len(num_pairs)
-    #         max_pair = pair
     pair_queue = sorted(rem_pairs, key = lambda p: len(rem_pairs[p]), reverse=True)
     if len(pair_queue) == 0:
         return in_circ.copy(), None, None
@@ -118,10 +113,9 @@ def aggregate(in_circ, node_map, node_array=None):
             if idx in visited_pairs:
                 continue
 
-            q2, q1_ctrl, layer_idx, _ = pairs[idx]
+            curr_op = pairs[idx].get_op_tuple()
 
             ### ignore ops that are already part of a diff (q, node) pair
-            curr_op = (q1, q2, layer_idx) if q1_ctrl else (q2, q1, layer_idx)
             if curr_op in visited_ops:
                 continue
             visited_ops.add(curr_op)
@@ -132,8 +126,7 @@ def aggregate(in_circ, node_map, node_array=None):
             comm_blocks.append([idx])
 
             for idx_next in range(idx+1, len(pairs)):
-                _, _, layer_idx_next, _ = pairs[idx_next]
-                if layer_idx_next > layer_idx + 1:
+                if pairs[idx_next].layer_idx > layer_idx + 1:
                     break
 
                 # consecutive pairs
@@ -158,7 +151,7 @@ def aggregate(in_circ, node_map, node_array=None):
                 left_block = block[-1]
                 right_block = comm_blocks[idx_next][0]
 
-                did_merge, out_circ = merge(q1, pairs[left_block], pairs[right_block], out_circ)
+                did_merge, out_circ = merge(pairs[left_block], pairs[right_block], out_circ)
                 if not did_merge:
                     merged_blocks.append(block_modified)
                     break
