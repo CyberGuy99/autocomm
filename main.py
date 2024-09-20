@@ -224,8 +224,9 @@ def assign(in_circ, pair_to_blocks, pair_to_ops, node_array=None):
     out_circ = in_circ.copy()
     tp_assign = dict() # KEY: ((q, node), block_index), VALUE: True or False
     for pair, blocks in pair_to_blocks.items():
+        # block is a collection of op indices, typically consecutive
         for idx, block in enumerate(blocks):
-            block_details = [pair_to_ops[pair][p] for p in block]
+            block_details = [pair_to_ops[pair][p] for p in block] # redundant indexing, it is given that they are consecutive
             q1, node = pair
             bi, ctrls = is_bidirectional(q1, block_details)
 
@@ -237,8 +238,73 @@ def assign(in_circ, pair_to_blocks, pair_to_ops, node_array=None):
 
     return tp_assign, out_circ
 
-def schedule(in_circ, node_map, node_array=None):
-    return in_circ.copy()
+def must_serialize_cat(first_block, second_block, node_map, usage):
+    (q1_1, node2_1), _ = first_block[0]
+    (q1_2, node2_2), _ = second_block[0]
+    assert not (q1_1 == q1_2 and node2_1 == node2_2)
+
+    if q1_1 == q1_2:
+        # must be on different nodes, same qubit cannot be sent to two diff nodes concurrently
+        return True
+    
+    node1_1 = node_map[q1_1]
+    node1_2 = node_map[q1_2]
+    if node1_1 != node1_2 and node_1 != node_2:
+        # totally independent
+        return False
+
+    # must count 
+    return usage[node1_1] < 2 and usage[node1_2] < 2 and usage[node2_1] < 2 and usage[node2_2] < 2
+
+
+def must_serialize_tp(first_block, second_block, node_map, usage):
+    return must_serialize_cat(first_block, second_block, node_map, usage)
+
+def greedy_schedule(blocks, node_map, is_tp):
+    concurrents = [] # array of arrays, each subarray has consecutive block indices
+    visited_blocks = set()
+    for idx, block_info in enumerate(blocks):
+        if idx in visited_blocks:
+            continue
+        concurrents.append[ [idx] ]
+        visited_blocks.add(idx)
+
+        usage = dict()
+        q1_1, node2_1 = block_info[0] # first pair in the block is fine, they all have same (q, node)
+        usage[node_map[q1_1]] = 1
+        usage[node2_1] = 1
+
+        for idx_next in range(idx+1, blocks):
+            next_block_info = blocks[idx_next]
+            if (is_tp and must_serialize_tp(block_info, next_block_info, node_map, usage)) \
+                    or (not is_tp and must_serialize_cat(block_info, next_block_info, node_map, usage)):
+                break
+
+
+            q2_1, node2_2 = next_block_info[0]
+            if node_map[q2_1] not in usage:
+                node_map[q2_1] = 0
+            usage[node_map[q2_1]] += 1
+
+            if node_map[node2_2] not in usage:
+                node_map[node2_2] = 0
+            usage[node2_2] += 1
+
+            concurrents[-1].append(idx_next)
+            visited_blocks.add(idx_next)
+
+    return concurrentts
+
+
+
+
+def schedule(in_circ, tp_pair_blocks, cat_pair_blocks, node_map):
+    out_circ = in_circ.copy() # circuit should stay the same, only changing metadata (comm schedule)
+
+    concurrent_cats = greedy_schedule(cat_pair_blocks, node_map, is_tp=False) 
+    concurrent_tps = greedy_schedule(tp_pair_blocks, node_map, is_tp=True) 
+
+    return out_circ, (concurrent_tps, concurrent_cats)
 
 def map_to_nodes(num_nodes, in_circ):
     qubit_to_node = dict()
@@ -275,10 +341,15 @@ def main(raw_input, in_type, num_nodes=0):
     pair_to_blocks, pair_to_ops, agg_circuit = aggregate(input_circuit, node_map)
     print(agg_circuit)
 
-    assignments, assigned_circuit = assign(agg_circuit, node_map, pair_to_blocks, pair_to_ops)
+    assignments, assigned_circuit = assign(agg_circuit, pair_to_blocks, pair_to_ops)
     print(assigned_circuit)
 
-    scheduled_circuit = schedule(assigned_circuit, node_map)
+    # indexing into the list of block *indices* for each pair, using idx
+    # using pair_to_ops to get the block details from each (pair, block_idx)
+    tp_blocks = [pair, pair_to_ops[pair][pair_to_blocks[pair][idx]] for (pair, idx), is_tp in assignments.items() if is_tp]
+    cat_blocks = [pair, pair_to_ops[pair][pair_to_blocks[pair][idx]] for (pair, idx), is_tp in assignments.items() if not is_tp]
+
+    scheduled_circuit = schedule(assigned_circuit, tp_blocks, cat_blocks)
     print(scheduled_circuit)
 
     return scheduled_circuit
