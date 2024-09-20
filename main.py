@@ -10,10 +10,26 @@ def dict_append(d, key, append_value):
     if key not in d:
         d[key] = []
     d[key].append(append_value)
+
+
+def commutes(op, left_op, right_op):
+    l_control, l_targ = left_op 
+    r_control, r_targ = right_op 
+
+    check = 0
+    # TODO make check more precise
+    if l_control not in op and l_targ not in op:
+        check += 1
+
+    if r_control not in op and r_targ not in op:
+        check += 2
+
+    return check
+ 
  
 
 # subroutine for aggregating blocks
-def merge(left_block, right_block, pairs, qubit_ops):
+def merge(q1, left_block, right_block, pairs, qubit_ops):
     left_pair = pairs[left_block[-1]]
     right_pair = pairs[right_block[0]]
 
@@ -23,7 +39,19 @@ def merge(left_block, right_block, pairs, qubit_ops):
 
     for op_idx in range(op_idx_l + 1, op_idx_r):
         curr_op = qubit_ops[op_idx]
+        left_op = (q1, q2_l) if is_ctrl_l else (q2_l, q1)
+        right_op = (q1, q2_r) if is_ctrl_r else (q2_r, q1)
 
+        commute_check = commutes(curr_op, left_op, right_op)
+        
+        if commute_check == 0:
+            return False, left_block # merge failed
+        if commute_check == 1 or commute_check == 3:
+            # modify circuit to move curr_op left
+            print('todo: move left')
+        if commute_check == 2:
+            # modify circuit to move curr_op right
+            print('todo: move right')
 
     return True, left_block + right_block
 
@@ -70,8 +98,13 @@ def aggregate(in_circ, node_map, node_array=None):
         print(f'qubit node {pair_queue[0]} has most interaction: {max_pair_len} remote gates')
 
     ## ITERATIVE REFINEMENT
+
+    # KEY: pair_k (q,node)_k
+    # VALUE: [block_0 ... block_n] where each block_i is [pair_0 ... pair_m] 
+    pair_to_merged = dict() 
+
     for q1, node in pair_queue:
-        ## PREPROCESSING (find communication blocks)
+        ## PREPROCESSING (find communication blocks -- consecutive CNOTs)
         pairs = rem_pairs[(q1, node)]
         visited_pairs = set() # pairs that have been added to a block
         comm_blocks = []
@@ -91,7 +124,7 @@ def aggregate(in_circ, node_map, node_array=None):
                 # consecutive pairs
                 visited_pairs.add(idx_next)
                 comm_blocks[-1].append(idx_next)
-                layer_idx += 1 # next idx becomes current
+                layer_idx += 1 # curr idx becomes next
 
         if VERBOSE:
             print(f'{(q1,node)} consecutive blocks: {comm_blocks}') # debug
@@ -99,25 +132,23 @@ def aggregate(in_circ, node_map, node_array=None):
         
         ## LINEAR MERGE
         visited_blocks = set()
+        merged_blocks = [] # blocks that have completed merging
         for idx, block in enumerate(comm_blocks):
             if idx in visited_blocks:
                 continue
                 
+            block_modified = block
             for idx_next in range(idx+1, len(comm_blocks)):
-                did_merge, blocks = merge(block, comm_blocks[idx_next], pairs, qubit_ops)
+                did_merge, block_modified = merge(q1, block, comm_blocks[idx_next], pairs, qubit_ops)
                 if not did_merge:
+                    merged_blocks.append(block_modified)
                     break
                 visited_blocks.add(idx_next)
+        
 
+        pair_to_merged[(q1, node)] = merged_blocks
 
-
-
-
-
-                
-            
-                
-    return in_circ.copy()
+    return pair_to_merged, in_circ.copy()
 
 
 def assign(in_circ, node_map, node_array=None):
