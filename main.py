@@ -2,6 +2,7 @@ from sys import argv
 import json
 import cirq
 import cirq.contrib.qasm_import
+from cirq.circuits import InsertStrategy
 
 DEFAULT_QUBITS_PER_NODE = 2
 VERBOSE = True
@@ -27,39 +28,45 @@ def commutes(op, left_op, right_op):
     return check
  
  
+def move_gate_by(layer_idx, gate, circ, delta=-1):
+    move_gate_to(layer_idx, gate, circ, layer_idx+delta)
+
+def move_gate_to(layer_idx, gate, circ, new_layer):
+    circ.batch_remove([(layer_idx, gate)])
+    circ.insert(gate, new_layer, strategy=InsertStrategy.Inline)
+
+
+
 
 # subroutine for aggregating blocks
-def merge(q1, left_block, right_block, pairs, qubit_ops):
-    left_pair = pairs[left_block[-1]]
-    right_pair = pairs[right_block[0]]
+def merge(q1, left_pair, right_pair, circ):
+    temp_circ = circ.copy()
 
     # check commutation rules and in-between gates to see if blocks can merge
-    q2_l, is_ctrl_l, _, op_idx_l = left_pair
-    q2_r, is_ctrl_r, _, op_idx_r = right_pair
+    q2_l, is_ctrl_l, layer_l, _ = left_pair
+    q2_r, is_ctrl_r, layer_r, _ = right_pair
 
-    for op_idx in range(op_idx_l + 1, op_idx_r):
-        curr_op = qubit_ops[op_idx]
-        left_op = (q1, q2_l) if is_ctrl_l else (q2_l, q1)
-        right_op = (q1, q2_r) if is_ctrl_r else (q2_r, q1)
 
-        commute_check = commutes(curr_op, left_op, right_op)
-        
-        if commute_check == 0:
-            return False, left_block # merge failed
-        if commute_check == 1 or commute_check == 3:
-            # modify circuit to move curr_op left
-            print('todo: move left')
-        if commute_check == 2:
-            # modify circuit to move curr_op right
-            print('todo: move right')
+    left_op = (q1, q2_l) if is_ctrl_l else (q2_l, q1)
+    right_op = (q1, q2_r) if is_ctrl_r else (q2_r, q1)
+    for layer_idx in range(layer_l + 1, layer_r):
+        for curr_op in circ[layer_idx]:
+            commute_check = commutes(curr_op, left_op, right_op)
+            
+            if commute_check == 0:
+                return False, left_block, circ # merge failed
+            if commute_check == 1 or commute_check == 3:
+                move_gate_by(layer_idx, curr_op, temp_circ)
+            if commute_check == 2:
+                move_gate_by(layer_idx, curr_op, temp_circ, delta=1)
 
-    return True, left_block + right_block
+    return True, left_block + right_block, temp_circ
 
 def aggregate(in_circ, node_map, node_array=None):
 
     # identify qubit-node pair with most remote gates
     rem_pairs = dict()
-    qubit_ops = dict()
+    qubit_ops = dict() # not used much, mostly debugging
 
     for layer_idx, layer in enumerate(in_circ):
         for op in layer:
@@ -99,10 +106,12 @@ def aggregate(in_circ, node_map, node_array=None):
 
     ## ITERATIVE REFINEMENT
 
-    # KEY: pair_k (q,node)_k
-    # VALUE: [block_0 ... block_n] where each block_i is [pair_0 ... pair_m] 
+    # KEY: (q,node)
+    # VALUE: [block_1 ... block_n] where each block_i is a list of operations [(q1, q2)_1 ... (q1, q2)_m] 
     pair_to_merged = dict() 
-
+    visted_ops = set() # all op that have been added to the above dict
+    out_circ = in_circ.copy()
+    
     for q1, node in pair_queue:
         ## PREPROCESSING (find communication blocks -- consecutive CNOTs)
         pairs = rem_pairs[(q1, node)]
@@ -112,7 +121,16 @@ def aggregate(in_circ, node_map, node_array=None):
             if idx in visited_pairs:
                 continue
 
-            _, _, layer_idx, _ = pairs[idx]
+            q2, q1_ctrl, layer_idx, _ = pairs[idx]
+
+            ### ignore ops that are already part of a diff (q, node) pair
+            curr_op = (q1, q2, layer_idx) if q1_ctrl else (q2, q1, layer_idx)
+            if curr_op in visited_ops:
+                continue
+            visited_ops.add(curr_op)
+            ######
+
+            
             visited_pairs.add(idx)
             comm_blocks.append([idx])
 
@@ -136,23 +154,88 @@ def aggregate(in_circ, node_map, node_array=None):
         for idx, block in enumerate(comm_blocks):
             if idx in visited_blocks:
                 continue
-                
+            visited_blocks.add(idx)
+
             block_modified = block
             for idx_next in range(idx+1, len(comm_blocks)):
-                did_merge, block_modified = merge(q1, block, comm_blocks[idx_next], pairs, qubit_ops)
+                left_pair = pairs[block[-1]]
+                right_pair = pairs[comm_blocks[idx_next][0]]
+
+                did_merge, block_modified, out_circ = merge(q1, left_pair, right_pair, out_circ)
                 if not did_merge:
                     merged_blocks.append(block_modified)
                     break
                 visited_blocks.add(idx_next)
-        
 
         pair_to_merged[(q1, node)] = merged_blocks
 
-    return pair_to_merged, in_circ.copy()
+    return pair_to_merged, rem_pairs, out_circ
+
+def is_bidirectional(q1, block):
+    assert len(block) > 0
+    if len(block) == 1:
+        return False
+
+    direction = block[0][1]
+    ctrls = []
+
+    birectional = False
+    for q2, q1_ctrl, _, _ in block:
+        ctrls.append(q1 if q1_ctrl else q2)
+
+        # if at least one direction is diff from the first, bi=True
+        if q1_ctrl != direction:
+            bidirectional = True
+
+    return bidirectional, ctrls
 
 
-def assign(in_circ, node_map, node_array=None):
-    return in_circ.copy()
+commuting_singles = {cirq.Z, cirq.Rz, cirq.S, cirq.I}
+def single_X_interferes(op, ctrl):
+    q = op.qubits[0]
+    if q != ctrl:
+        return False, False
+
+    return op.gate not in commuting_singles, True
+
+# checks if there exits single qubit gates that cannot commute
+def check_unidirectional(l_layer, r_layer, ctrls, circ):
+    commuting_gates = [] # [(op, layer_idx)_k]
+
+    for layer_idx in range(l_layer+1, r_layer):
+        for op in circ[layer_idx]:
+            if len(op.qubits) > 1:
+                continue
+
+            noncommuting, should_move = unzip([single_X_interferes(op, ctrl) for ctrl in ctrls[:recent_block_index+1]])
+            if any(noncommuting):
+                return True
+
+            if any(should_move):
+                commuting_gates.append((op, layer_idx))
+
+    # move single qubit gates that target the ctrl back
+    for op, layer_idx in commuting_gates:
+        move_gate_to(layer_idx, op, circ, l_layer)
+    return False
+
+
+def assign(in_circ, pair_to_blocks, pair_to_ops, node_array=None):
+    out_circ = in_circ.copy()
+    tp_assign = dict() # KEY: ((q, node), block_index), VALUE: True or False
+    for pair, blocks in pair_to_blocks.items():
+        for idx, block in enumerate(blocks):
+            block_details = [pair_to_ops[pair][p] for p in block]
+            q1, node = pair
+            bi, ctrls = is_bidirectional(q1, block_details)
+
+            if bi:
+                tp_assign[(pair, idx)] = True # TP-COM
+            else:
+                # check for single qubit gates on ctrls in the block 
+                tp_assign[(pair, idx)] = check_unidrectional(block_details[0].layer, block_details[-1].layer, ctrls, out_circ)
+
+    return tp_assign, out_circ
 
 def schedule(in_circ, node_map, node_array=None):
     return in_circ.copy()
@@ -189,10 +272,10 @@ def main(raw_input, in_type, num_nodes=0):
     node_map, node_arr = map_to_nodes(num_nodes, input_circuit)
 
 
-    agg_circuit = aggregate(input_circuit, node_map)
+    pair_to_blocks, pair_to_ops, agg_circuit = aggregate(input_circuit, node_map)
     print(agg_circuit)
 
-    assigned_circuit = assign(agg_circuit, node_map)
+    assignments, assigned_circuit = assign(agg_circuit, node_map, pair_to_blocks, pair_to_ops)
     print(assigned_circuit)
 
     scheduled_circuit = schedule(assigned_circuit, node_map)
