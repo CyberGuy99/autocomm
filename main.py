@@ -285,8 +285,17 @@ def schedule(in_circ, tp_pair_blocks, cat_pair_blocks):
     out_circ = in_circ.copy() # circuit should stay the same, only changing metadata (comm schedule)
 
     concurrent_cats = greedy_schedule(cat_pair_blocks, is_tp=False) 
-    concurrent_tps = greedy_schedule(tp_pair_blocks, is_tp=True) 
+    concurrent_tps = greedy_schedule(tp_pair_blocks, is_tp=True)
 
+    # TODO group cat and tp blocks. ~~Join each layer of blocks with EPR prep time (t_EPR) if the node comm is diff~~
+    #### RULE for grouping: order should be preserved -- if CX(1,3) comes before CX(1,5) in original circuit. Preserve. 
+    # ##### CX(2,4) does not matter,
+    ###### Order key: first operation's layer_idx (last op doesn't matter)
+    # TODO keep track of data qubits location (dict) and add TP operations as necessary (handles FUSION)
+    # ## TODO find out when must EPR time be added (the circuit diagrams in Figure 11-14 aren't consistent) 
+
+
+    # TODO return list[list[Block] U Comm]
     return out_circ, (concurrent_tps, concurrent_cats)
 
 def map_to_nodes(num_nodes, circ):

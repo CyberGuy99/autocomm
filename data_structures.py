@@ -1,5 +1,19 @@
 import cirq
 
+class Comm:
+    source_node: int = -1
+    dest_node: int = -1
+    data_qubit: cirq.LineQubit = None
+    is_tp = None
+
+    def __init__(self, source_node, dest_node, data_qubit, is_tp):
+        self.source_node = source_node
+        self.dest_node = dest_node
+        self.data_qubit = data_qubit
+
+        self.is_tp = is_tp
+
+
 class Pair:
     # expecting circuit to only have line qubits
     qubit: cirq.LineQubit = None
