@@ -39,8 +39,63 @@ class Block:
     def __init__(self, pairs):
         self.pairs = pairs
 
+    def get_q_and_node(self):
+        return (self.pairs[0].qubit, self.pairs[0].node) 
+
+    def get_pair(self):
+        # model_pair = self.pairs[0]
+        # return Pair(model_pair.qubit, model_pair.node, model_pair.node_qubit, model_pair.qubit_node, False, -1)
+        return self.pairs[0]
+
     def start_pair_idx(self):
         return self.pairs[0].layer_idx
 
     def end_pair_idx(self):
         return self.pairs[-1].layer_idx
+
+
+
+class PairAggregation:
+    q_and_node: tuple(cirq.LineQubit, int) = None
+    blocks: list[Block] = []
+    pairs: list[Pair] = []
+
+    
+    def __init__(self, pair, blocks, pairs):
+        self.pair = pair
+        self.blocks = blocks
+        self.pairs = pairs
+    
+    def get_full_blocks(self):
+        return [ [pair for pair in block] for block in self.blocks]
+
+
+
+class PairAggregationSet:
+    # clustered_blocks: dict[ tuple(cirq.LineQubit,int), list[Block] ] = dict() 
+    # clustered_pairs: dict[ tuple(cirq.LineQubit,int), list[Pair] ] = dict() # KEY: (q, node), VALUE: list of Pairs
+
+    # KEY: (q, node), VALUE: PairAggregation
+    aggregations: dict[ tuple(cirq.LineQubit,int), PairAggregation ] = dict()
+
+    def __init__(self, clustered_blocks, clustered_pairs):
+        for pair_key in clustered_blocks:
+            if pair_key not in clustered_pairs:
+                print(f'Unusual Key: {pair_key}')
+                continue
+
+            self.aggregations[pair_key] = PairAggregation(q_and_node=pair_key, \
+                blocks=clustered_blocks[pair_key], pairs=clustered_pairs[pair_key])
+
+    
+    def get_full_block_set(self, filter=None, flip=False):
+        if not filter:
+            filter = dict( {q_and_node : True for q_and_node in self.aggregations} )
+        if flip:
+            filter = dict( {not filter[q_and_node] for q_and_node in self.aggregations} )
+
+        return [agg.get_full_blocks() for q_and_node, agg in self.aggregations.items() if filter[q_and_node]]
+
+
+    def get_keyed_blocks(self):
+        return dict( {pair_key: agg.blocks for pair_key, agg in self.aggregations.items()} )

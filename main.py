@@ -4,7 +4,7 @@ import cirq
 import cirq.contrib.qasm_import
 from cirq.circuits import InsertStrategy
 
-from data_structures import Pair
+from data_structures import Block, Pair, PairAggregationSet
 from qubit_partition import pymetis_partition
 from util import dict_append, dict_num_add
 
@@ -55,7 +55,7 @@ def merge(left_pair, right_pair, circ):
 
     return True, temp_circ
 
-def aggregate(in_circ, node_map, node_array=None):
+def aggregate(in_circ, node_map):
 
     # identify qubit-node pair with most remote gates
     rem_pairs = dict()
@@ -103,9 +103,9 @@ def aggregate(in_circ, node_map, node_array=None):
     
     for q1, node in pair_queue:
         ## PREPROCESSING (find communication blocks -- consecutive CNOTs)
-        pairs = rem_pairs[(q1, node)]
+        pairs = rem_pairs[(q1, node)] # list of Pairs.
         visited_pairs = set() # pairs that have been added to a block
-        comm_blocks = []
+        comm_blocks = [] # list of lists of pair indices. max index is len(pairs) - 1. 
         for idx in range(len(pairs)):
             if idx in visited_pairs:
                 continue
@@ -145,19 +145,20 @@ def aggregate(in_circ, node_map, node_array=None):
 
             block_modified = block
             for idx_next in range(idx+1, len(comm_blocks)):
-                left_block = block[-1]
-                right_block = comm_blocks[idx_next][0]
+                left_block_last_pair = block[-1] # pair index
+                right_block_first_pair = comm_blocks[idx_next][0]
 
-                did_merge, out_circ = merge(pairs[left_block], pairs[right_block], out_circ)
+                did_merge, out_circ = merge(pairs[left_block_last_pair], pairs[right_block_first_pair], out_circ)
                 if not did_merge:
                     merged_blocks.append(block_modified)
                     break
-                block_modified = left_block + right_block
+                block_modified = block + comm_blocks[idx_next]
                 visited_blocks.add(idx_next)
 
-        pair_to_merged[(q1, node)] = merged_blocks
+        merged_blocks_with_info = [ Block([pairs[pair_idx] for pair_idx in block]) for block in merged_blocks]
+        pair_to_merged[(q1, node)] = merged_blocks_with_info
 
-    return pair_to_merged, rem_pairs, out_circ
+    return PairAggregationSet(clustered_blocks=pair_to_merged, clustered_pairs=rem_pairs), out_circ
 
 def is_bidirectional(block):
     assert len(block) > 0
@@ -207,26 +208,27 @@ def check_unidirectional(block_idxs, ctrls, circ):
     return False
 
 
-def assign(in_circ, pair_to_blocks, pair_to_ops):
+def assign(in_circ: cirq.Circuit, aggregations: PairAggregationSet):
     out_circ = in_circ.copy()
     tp_assign = dict() # KEY: ((q, node), block_index), VALUE: True or False
-    for pair, blocks in pair_to_blocks.items():
+    for pair, blocks in aggregations.get_keyed_blocks():
         # block is a collection of op indices, typically consecutive
         for idx, block in enumerate(blocks):
-            block_details = [pair_to_ops[pair][p] for p in block] # redundant indexing, it is given that they are consecutive
-            bi, ctrls = is_bidirectional(block_details)
+            assert type(block) is Block
+
+            bi, ctrls = is_bidirectional(block.pairs)
 
             if bi:
                 tp_assign[(pair, idx)] = True # TP-COM
             else:
                 # check for single qubit gates on ctrls in the block 
-                block_idxs = [b.layer_idx for b in block_details]
+                block_idxs = [pair.layer_idx for pair in block.pairs]
                 tp_assign[(pair, idx)] = check_unidirectional(block_idxs, ctrls, out_circ)
 
     return tp_assign, out_circ
 
 NUM_COMM_NODES = 2
-def must_serialize_cat(first_pair, second_pair, node_map, usage):
+def must_serialize_cat(first_pair, second_pair, usage):
     assert not (first_pair.qubit == second_pair.qubit and first_pair.node == second_pair.node)
 
     if first_pair.qubit == second_pair.qubit:
@@ -242,25 +244,25 @@ def must_serialize_cat(first_pair, second_pair, node_map, usage):
     return all([usage(node) < NUM_COMM_NODES for node in nodes])
 
 
-def must_serialize_tp(first_block, second_block, node_map, usage):
-    return must_serialize_cat(first_block, second_block, node_map, usage)
+def must_serialize_tp(first_block, second_block, usage):
+    return must_serialize_cat(first_block, second_block, usage)
 
-def greedy_schedule(blocks, is_tp):
+def greedy_schedule(blocks: list[Block], is_tp):
     concurrents = [] # array of arrays, each subarray has consecutive block indices
     visited_blocks = set()
-    for idx, block in enumerate(blocks):
+    for idx, (_, block) in enumerate(blocks.items()):
         if idx in visited_blocks:
             continue
         concurrents.append[ [idx] ]
         visited_blocks.add(idx)
 
         usage = dict()
-        curr_pair = block[0]
+        curr_pair = block.get_pair()
         usage[curr_pair.qubit_node] = 1 # node the qubit belongs to
         usage[curr_pair.node] = 1 # main node
 
         for idx_next in range(idx+1, blocks):
-            next_pair = blocks[idx_next][0]
+            next_pair = blocks[idx_next].get_pair()
             if (is_tp and must_serialize_tp(curr_pair, next_pair, usage)) \
                     or (not is_tp and must_serialize_cat(curr_pair, next_pair, usage)):
                 break
@@ -327,7 +329,7 @@ def main(raw_input, in_type, num_nodes=0):
     node_map = map_to_nodes(num_nodes, input_circuit)
 
 
-    pair_to_blocks, pair_to_ops, agg_circuit = aggregate(input_circuit, node_map)
+    aggregation, agg_circuit = aggregate(input_circuit, node_map)
     if not agg_circuit:
         print('Invalid Input Circuit')
         print(input_circuit)
@@ -335,13 +337,13 @@ def main(raw_input, in_type, num_nodes=0):
 
     print(agg_circuit)
 
-    assignments, assigned_circuit = assign(agg_circuit, pair_to_blocks, pair_to_ops)
+    assignments, assigned_circuit = assign(agg_circuit, aggregation)
     print(assigned_circuit)
 
     # indexing into the list of block *indices* for each pair, using idx
     # using pair_to_ops to get the block details from each (pair, block_idx)
-    tp_blocks = [(q_and_node, pair_to_ops[q_and_node][pair_to_blocks[q_and_node][idx]]) for (q_and_node, idx), is_tp in assignments.items() if is_tp]
-    cat_blocks = [(q_and_node, pair_to_ops[q_and_node][pair_to_blocks[q_and_node][idx]]) for (q_and_node, idx), is_tp in assignments.items() if not is_tp]
+    tp_blocks = aggregation.get_full_block_set(filter=assignments, flip=False)
+    cat_blocks = aggregation.get_full_block_set(filter=assignments, flip=True)
 
     scheduled_circuit, concurrent_tps, concurrent_cats = schedule(assigned_circuit, tp_blocks, cat_blocks)
     print(scheduled_circuit)
