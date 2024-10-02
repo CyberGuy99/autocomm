@@ -70,7 +70,7 @@ class Block:
 
 
 class PairAggregation:
-    q_and_node: tuple(cirq.LineQubit, int) = None
+    q_and_node: tuple[cirq.LineQubit, int] = None
     blocks: list[Block] = []
     pairs: list[Pair] = []
 
@@ -90,7 +90,7 @@ class PairAggregationSet:
     # clustered_pairs: dict[ tuple(cirq.LineQubit,int), list[Pair] ] = dict() # KEY: (q, node), VALUE: list of Pairs
 
     # KEY: (q, node), VALUE: PairAggregation
-    aggregations: dict[ tuple(cirq.LineQubit,int), PairAggregation ] = dict()
+    aggregations: dict[ tuple[cirq.LineQubit,int], PairAggregation ] = dict()
 
     def __init__(self, clustered_blocks, clustered_pairs):
         for pair_key in clustered_blocks:
