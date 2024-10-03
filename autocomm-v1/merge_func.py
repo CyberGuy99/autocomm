@@ -4,9 +4,16 @@ from commute_func import *
 def is_comm_block(block):
     return type(block[0]) == list
 
+# Gates in the gate_list are either simply appended (single qubit or intra-node) or "selected"
+# They are selected as a (source, node) based on which of the ctrl,target provide more "benefit"
+### In ties, the ctrl is chosen
+# benefit(g) := the number of consecutive 2-qubit gates with same (source, node) immediately after g.
+### if benefit is 0 for both, then the gate is added on its own (block of size 1) 
+######  TODO HOWEVER, the (source, node) is never included
+# The gate and its consecutive gates with same (source, node) are added as a block and never revisited.
 def consecutive_merge(gate_list, qubit_node_mapping):
     n_gate = len(gate_list)
-    gate_del_flag = [0 for i in range(n_gate)]
+    gate_del_flag = [0 for i in range(n_gate)] # IGNORE Gate in bottom loop if 1
     new_gate_block_list = []
     for gidx0, g0 in enumerate(gate_list): # initial aggregation
         if gate_del_flag[gidx0] == 0:
@@ -22,7 +29,7 @@ def consecutive_merge(gate_list, qubit_node_mapping):
                         cnt = 0
                         selected_gates = []
                         for gidx1 in range(gidx0+1, n_gate):
-                            _break_flag = True
+                            _break_flag = True # NOTE This value is only used if len(qb1) > 2 (i.e. never)
                             if gate_del_flag[gidx1] == 0:
                                 g1 = gate_list[gidx1]
                                 qb1 = gate_qubits(g1)
@@ -66,14 +73,18 @@ def consecutive_merge(gate_list, qubit_node_mapping):
                             gate_del_flag[gidx1] = 1
                             comm_block[1].append(gate_list[gidx1])
                     new_gate_block_list.append(comm_block)
-                else:
+                else: # IF GATE IS INSIDE ONE NODE, SIMPLY APPEND
                     new_gate_block_list.append(g0)
-            else:
+            else: # SIMPLY APPEND if SINGLE QUBIT GATE
                 new_gate_block_list.append(g0)
 
     return new_gate_block_list
 
+# WOW 200 lines of code in this one function --- BAD
+# refine repeats it 3 times because the merging only happens in a DP way (between immediately consecutive common blocks)
+# check_commute_func is usually commute_func_right 
 def linear_merge_iter(new_gate_block_list, qubit_node_mapping, refine_iter_cnt, check_commute_func):
+    # TODO assert every block is a comm_block (as per output of consecutive_merge)
     for i in range(refine_iter_cnt):
         anew_gate_block_list = []
         n_gate = len(new_gate_block_list)
@@ -89,7 +100,7 @@ def linear_merge_iter(new_gate_block_list, qubit_node_mapping, refine_iter_cnt, 
                         for _g_f in gb0[1]:
                             _qb_f = gate_qubits(_g_f)
                             if len(_qb_f) == 2:
-                                g0 = _g_f
+                                g0 = _g_f # g0 becomes the latest 2 qubit gate in in the block
                         qb_to_node_pair = []
                         for qidx0 in [0, 1]:
                             qb0 = gate_qubits(g0)
@@ -104,9 +115,9 @@ def linear_merge_iter(new_gate_block_list, qubit_node_mapping, refine_iter_cnt, 
                         for gidx1 in range(gidx0+1, n_gate):
                             gb1 = new_gate_block_list[gidx1]
                             if gate_del_flag[gidx1] == 0:
-                                if is_comm_block(gb1):
-                                    if gb1[0] == []:
-                                        for _g_f in gb1[1]:
+                                if is_comm_block(gb1): #TODO so if gb1 is not a block, it will never be included? we can't skip over it and merge other blocks..
+                                    if gb1[0] == []: # gb1 has no source, target info (must be a SINGLETON AS PER consecutive_aggregate)
+                                        for _g_f in gb1[1]: # if loops more than once, then it is not a singleton
                                             _qb_f = gate_qubits(_g_f)
                                             if len(_qb_f) == 2:
                                                 if _qb_f[0] == source_qb0 and qubit_node_mapping[_qb_f[1]] == target_node0:
@@ -141,7 +152,7 @@ def linear_merge_iter(new_gate_block_list, qubit_node_mapping, refine_iter_cnt, 
                         anew_gate_block_list.append(gb0)
                     cur_gb0 = [[source_qb0, target_node0], gb0[1]]
                     # print("cur_gb0:", cur_gb0, _merge_blocks)
-                    for gidx1, _merge_type in _merge_blocks[:1]: # only merge first one at linear step
+                    for gidx1, _merge_type in _merge_blocks[:1]: # NOTE only merge first one at linear step
                         if gate_del_flag[gidx1] == 0:
                             new_rblk = new_gate_block_list[gidx1][1]
                             new_lblk_list = []
@@ -166,7 +177,7 @@ def linear_merge_iter(new_gate_block_list, qubit_node_mapping, refine_iter_cnt, 
                                         if flag == True:
                                             new_lblk_list.extend(new_lblk_next[::-1])
                                             new_rblk = new_rblk_next
-                                        else:
+                                        else: # TODO EVEN IF LG doesn't commute with RBLK, merge possible  (1) if single qubit (2) elif  intra-node gate with same node as gb0
                                             lgqb = gate_qubits(lg)
                                             if len(lgqb) == 1:
                                                 new_rblk = [lg] + new_rblk
@@ -233,7 +244,7 @@ def linear_merge_iter(new_gate_block_list, qubit_node_mapping, refine_iter_cnt, 
                                     anew_gate_block_list.append(lg)
                                 for lgidx in range(gidx0, gidx1+1):
                                     gate_del_flag[lgidx] = 1 # delete them
-                else:
+                else: # SIMPLY APPEND gb0 if SINGLETON
                     anew_gate_block_list.append(gb0)
             else:
                 pass # if gate/block deleted, nothing to do
@@ -353,6 +364,8 @@ def tp_comm_merge_iter(gate_block_list, qubit_node_mapping, refine_iter_cnt, che
 if __name__ == "__main__":
     assigned_block = [
         [[[0,2],1], [["CX",[0,1]]]],['CX',[4,0]],
+    # TODO Why is the first element of each first element (the source, node list) in a block a LIST of 3?
+    #  Shouldn't it be 2 ints for the source and node? (i.e. see comm_block[0]) lines in consecutive merge
         [[[0,3,1],1], [["CX",[0,3]]],[["CX",[2,0]]]]
     ]
     qn = [0,2,1,3,1]
