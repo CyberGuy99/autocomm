@@ -5,3 +5,5 @@ commute_func: 1 function. used in aggregate and schedule function in autocomm.py
 merge_func: 3 key functions. 2 helpers. consecutive_merge and linear_merge_iter used by aggregate in autocomm.py. tp_comm_merge_iter used by schedule function in automm.py
     is_comm_block used by assign, schedule and linear_merge_iter
     _is_tp_comm_block is used by tp_comm_merge_iter.
+
+main difference is they stop early (3 DP iters) and check both source/target orders

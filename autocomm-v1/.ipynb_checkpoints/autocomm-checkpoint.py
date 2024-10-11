@@ -56,6 +56,7 @@ def _comm_block_tag(source_qb, target_node, gate_block, qubit_node_mapping):
                     gjj = gate_block[jj]
                     gjjqb = gate_qubits(gjj)
                     if len(gjjqb) == 1 and gjjqb[0] == source_qb:
+                        # TODO this if/else can be condensed
                         if gate_type(gate_block[_remote_gates[0]]) == "CX":
                             if gate_type(gjj) not in ["RX", "Z", "X"]:
                                 use_cat_comm = False
@@ -107,11 +108,8 @@ def comm_schedule(assigned_gate_block_list, qubit_node_mapping, latency_metric=N
         latency_metric = {"1Q":0.1,"CX":1,"CZ":1,"CRZ":2.2,"MS":5,"EP":12,"CB":1}
     assigned_gate_block_list = tp_comm_merge_iter(assigned_gate_block_list, qubit_node_mapping, refine_iter_cnt, check_commute_func)
     # start scheduling
-    # [dq0, ..., dq(n-1)] where n is num qubits
     dqb_list = [f"dq{i}" for i in range(len(qubit_node_mapping))]
     node_count = max(qubit_node_mapping) + 1
-
-    # [cq0-0, cq0-1, ..., cqN-0, cqN-1] where N is num nodes
     cqb_list = [f"cq{i}-{j}" for j in [0,1] for i in range(node_count)]
     qb_slot = {}
     for qb in dqb_list+cqb_list:
@@ -136,14 +134,13 @@ def comm_schedule(assigned_gate_block_list, qubit_node_mapping, latency_metric=N
                 qb_slot[scqb] = max(qb_slot[scqb],qb_slot[tcqb]) + latency_metric["EP"]
                 qb_slot[tcqb] = qb_slot[scqb]
                 # CX
-                # TODO why is qb_slot[dq{target}] not checked here?
                 qb_slot[source_qb] = max(qb_slot[source_qb],qb_slot[scqb]) + latency_metric["CX"]
                 qb_slot[scqb] = qb_slot[source_qb]
                 # Measure and correction
                 qb_slot[scqb] += latency_metric["MS"]
                 qb_slot[tcqb] = max(qb_slot[tcqb],qb_slot[scqb]+latency_metric["CB"])+latency_metric["1Q"]
                 # main body
-                source_qb = tcqb # NOTE after the CAT-Comm, the source qb is transferred to the target node comm qubit
+                source_qb = tcqb
                 H_offset = 0
                 for glocal in gb[1]:
                     glqb = gate_qubits(glocal)
