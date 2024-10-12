@@ -58,6 +58,25 @@ def build_CZ_gate(ctrl, target):
 def build_CRZ_gate(ctrl, target, angle):
     return build_gate("CRZ", [ctrl, target], [angle])
 
+def build_toffoli_gate(qa, qb, qc):
+    gate_list = []
+    gate_list.append(build_H_gate(qc))
+    gate_list.append(build_CX_gate(qb,qc))
+    gate_list.append(build_Tdg_gate(qc))
+    gate_list.append(build_CX_gate(qa,qc))
+    gate_list.append(build_T_gate(qc))
+    gate_list.append(build_CX_gate(qb,qc))
+    gate_list.append(build_Tdg_gate(qc))
+    gate_list.append(build_CX_gate(qa,qc))
+    gate_list.append(build_T_gate(qb))
+    gate_list.append(build_T_gate(qc))
+    gate_list.append(build_H_gate(qc))
+    gate_list.append(build_CX_gate(qa,qb))
+    gate_list.append(build_T_gate(qa))
+    gate_list.append(build_Tdg_gate(qb))
+    gate_list.append(build_CX_gate(qa,qb))
+    return gate_list
+
 def crz_merge(g_list):
     layer_list = [[g] for g in g_list] # gate_list_to_layer(g_list)
     layer_qb_dict_list = []

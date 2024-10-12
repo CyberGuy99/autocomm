@@ -232,7 +232,6 @@ def commute_func_right(lblk, rblk): # right to left
                                 if rgtype != "CRZ":
                                     # Transform X into a Z gate
                                     new_check_point.append(build_gate(rgtype[1:],gate_qubits(rg)[:1],[-param for param in gate_params(rg)]))
-                                    #TODO What is the point of params if this is a CZ gate?
                                 else:
                                     is_commute = False
                                 new_rg = (rg)
@@ -424,6 +423,7 @@ def commute_func_right(lblk, rblk): # right to left
                                 new_check_point.append(build_gate("CX", gate_qubits(cur_lg), gate_params(cur_lg)))
                             else:
                                 new_check_point.append(build_gate("CX", gate_qubits(cur_lg)[::-1], gate_params(cur_lg)))
+                            print(f'DEBUG: {new_check_point[-1]}')
                             new_rg = (rg)
                     elif rgtype in ["CZ", "CRZ"]:
                         is_commute = True
