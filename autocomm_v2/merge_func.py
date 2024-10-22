@@ -1,7 +1,7 @@
 from typing import Union
-from gate_util import *
-from commute_func import *
-from gate_util import GateBlock, Gate
+from autocomm_v2.gate_util import *
+from autocomm_v2.commute_func import *
+from autocomm_v2.gate_util import GateBlock, Gate
 
 def is_comm_block(block):
     return type(block) is GateBlock

@@ -1,7 +1,7 @@
 from numpy import nan
 import pandas 
 
-from gate_util import remove_repeated_gates, Gate
+from autocomm_v2.gate_util import remove_repeated_gates, Gate
 
 
 def commute_func_right(lblk:list[Gate], rblk:list[Gate]): # right to left
