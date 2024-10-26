@@ -89,8 +89,11 @@ def consecutive_merge(gate_list:list[Gate], qubit_node_mapping:list[int]):
 # RETURNS: final anew_gate_block_list -- [comm_block]. comm_block: [[source_qubit, target_node], [gate_i]]
 ### [gate_i] is a list of merged gate blocks
 def linear_merge_iter(new_gate_block_list, qubit_node_mapping, refine_iter_cnt, check_commute_func):
+    print('Linear Merge Iter: ', end='')
     for i in range(refine_iter_cnt):
-        print(f'Linear Merge Iter #{i}...')
+        end = '.' if i == refine_iter_cnt - 1 else ','
+        print(f'{i}', end=end)
+
         blocks = [(b_i, g) for b_i, g in enumerate(new_gate_block_list) if type(g) is GateBlock]
         #block_target_cnts = [b.check_target_counts(qubit_node_mapping) for _, b in blocks]
         sanity_check_count(new_gate_block_list, qubit_node_mapping)
@@ -273,6 +276,8 @@ def linear_merge_iter(new_gate_block_list, qubit_node_mapping, refine_iter_cnt, 
             else:
                 pass # if gate/block deleted, nothing to do
         new_gate_block_list = anew_gate_block_list
+
+    print()
     return new_gate_block_list
 
 def handle_empty_block(block:GateBlock, expected_source:int, qubit_node_mapping):
@@ -289,8 +294,10 @@ def _is_tp_comm_block(blk):
     return type(blk) is GateBlock and not blk.is_cat
 
 def tp_comm_merge_iter(gate_block_list:list[Union[Gate, GateBlock]], qubit_node_mapping:list[int], refine_iter_cnt:int, check_commute_func):
+    print('TP Comm Merge Iter: ', end='')
     for i in range(refine_iter_cnt):
-        print(f'TP Comm Merge Iter #{i}...')
+        end = '.' if i == refine_iter_cnt - 1 else ','
+        print(f'{i}', end=end)
         sanity_check_count(gate_block_list, qubit_node_mapping)
 
         return_gate_block_list = []
@@ -402,6 +409,8 @@ def tp_comm_merge_iter(gate_block_list:list[Union[Gate, GateBlock]], qubit_node_
             else:
                 pass # if gate/block deleted, nothing to do
         gate_block_list = return_gate_block_list
+
+    print()
     return gate_block_list
 
 if __name__ == "__main__":

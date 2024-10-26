@@ -32,12 +32,16 @@ class Gate:
     def from_list(gate_list:list):
         return Gate(*gate_list)
 
-    def transform(self, type:str=None, qubits:list[int]=None, params:list[float]=None, global_phase:int=None):
-        type = self.type if type is None else type
+    def transform(self, _type:str=None, qubits:list[int]=None, params:list[float]=None, global_phase:int=None):
+        _type = self.type if _type is None else _type
         qubits = self.qubits if qubits is None else qubits
         params = self.params if params is None else params
         global_phase = self.global_phase if global_phase is None else global_phase
-        return Gate(_type=type, qubits=qubits, params=params, global_phase=global_phase)
+
+        if type(qubits) is int:
+            qubits = [qubits]
+
+        return Gate(_type=_type, qubits=qubits, params=params, global_phase=global_phase)
     
 
     def is_comm(self, qubit_node_mapping):
