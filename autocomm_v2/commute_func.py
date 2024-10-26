@@ -3,7 +3,6 @@ import pandas
 
 from autocomm_v2.gate_util import remove_repeated_gates, Gate
 
-
 def commute_func_right(lblk:list[Gate], rblk:list[Gate]): # right to left
     global df
     if df is None: 
