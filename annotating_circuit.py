@@ -1,6 +1,6 @@
 import simpy
 
-# 定义延迟时间
+# Define delay times
 SINGLE_QUBIT_GATE_DELAY = 1
 TWO_QUBIT_GATE_DELAY = 10
 ENTANGLEMENT_DELAY = 100
@@ -9,9 +9,9 @@ class QuantumGate:
     def __init__(self, gate_type, qubits, qpus_involved, circuit, initiating_qpu):
         self.gate_type = gate_type
         self.qubits = qubits
-        self.qpus_involved = qpus_involved  # 涉及的 QPU 列表
+        self.qpus_involved = qpus_involved  # List of involved QPUs
         self.circuit = circuit
-        self.initiating_qpu = initiating_qpu  # 发起执行该门的 QPU
+        self.initiating_qpu = initiating_qpu  # QPU that initiates the execution of the gate
 
     def is_remote(self):
         return len(self.qpus_involved) > 1
@@ -25,15 +25,15 @@ class Circuit:
         self.scheduler = scheduler
         self.completion_event = env.event()
         self.remaining_gates = len(gates)
-        self.logical_to_physical = {}  # 逻辑比特到物理比特的映射
+        self.logical_to_physical = {}  # Mapping from logical qubits to physical qubits
         self.action = env.process(self.run())
 
     def run(self):
-        # 输出逻辑比特到物理比特的映射
-        print(f"时间 {self.env.now}: 电路 {self.circuit_id} 的逻辑比特到物理比特映射：")
+        # Output the logical-to-physical qubit mapping
+        print(f"Time {self.env.now}: Circuit {self.circuit_id}'s logical-to-physical qubit mapping:")
         for logical_qubit, (qpu_id, physical_qubit) in self.logical_to_physical.items():
-            print(f"  逻辑比特 {logical_qubit} -> QPU {qpu_id}, 物理比特 {physical_qubit}")
-        # 将门映射到对应的QPU
+            print(f"  Logical qubit {logical_qubit} -> QPU {qpu_id}, physical qubit {physical_qubit}")
+        # Map gates to the corresponding QPU
         for gate in self.gates:
             qpus_involved = set()
             for logical_qubit in gate['qubits']:
@@ -43,16 +43,16 @@ class Circuit:
             initiating_qpu_id = qpus_involved[0]
             initiating_qpu = self.qpus[initiating_qpu_id]
             gate_obj = QuantumGate(gate['type'], gate['qubits'], qpus_involved, self, initiating_qpu)
-            # 仅将门放入发起 QPU 的队列
+            # Only place the gate in the initiating QPU's queue
             initiating_qpu.gate_queue.put(gate_obj)
-        # 等待电路执行完成
+        # Wait for the circuit to complete execution
         yield self.completion_event
-        # 释放物理比特资源
+        # Release physical qubit resources
         self.scheduler.release_qubits(self)
         self.scheduler.active_circuits.remove(self)
-        # 激活scheduler 执行下一个电路
+        # Activate scheduler to execute the next circuit
         yield self.env.process(self.scheduler.run())
-        print(f"时间 {self.env.now}: 调度器检测到电路 {self.circuit_id} 执行完成, 激活下一个电路")
+        print(f"Time {self.env.now}: Scheduler detected that circuit {self.circuit_id} has completed, activating the next circuit")
 
     def gate_done(self):
         self.remaining_gates -= 1
@@ -66,125 +66,125 @@ class QPU:
         self.num_computing_qubits = num_computing_qubits
         self.num_communication_qubits = num_communication_qubits
         self.gate_queue = simpy.Store(env)
-        # 初始化计算比特，每个比特用一个资源表示
+        # Initialize computing qubits, each represented by a resource
         self.qubits = {i: simpy.Resource(env, capacity=1) for i in range(num_computing_qubits)}
-        # 初始化通信比特，每个比特用一个资源表示
+        # Initialize communication qubits, each represented by a resource
         self.communication_qubits = {i: simpy.Resource(env, capacity=1) for i in range(num_communication_qubits)}
-        # 物理比特的占用情况
+        # Allocation status of physical qubits
         self.qubit_allocation = {}
         self.action = env.process(self.run())
 
     def run(self):
         while True:
             gate = yield self.gate_queue.get()
-            # 仅处理自己发起的门
+            # Only process gates initiated by this QPU
             if self != gate.initiating_qpu:
                 continue
-            # 启动一个新的进程来执行该门，而不等待其完成
+            # Start a new process to execute the gate without waiting for its completion
             self.env.process(self.execute_gate(gate))
 
     def execute_gate(self, gate):
         if len(gate.qubits) == 1:
-            # 单比特门
+            # Single-qubit gate
             yield self.env.process(self.execute_single_qubit_gate(gate))
         elif len(gate.qubits) == 2:
             if gate.is_remote():
-                # 远程双比特门
+                # Remote two-qubit gate
                 yield self.env.process(self.execute_remote_gate(gate))
             else:
-                # 本地双比特门
+                # Local two-qubit gate
                 yield self.env.process(self.execute_local_two_qubit_gate(gate))
-        # 通知电路该门已完成
+        # Notify the circuit that the gate is done
         gate.circuit.gate_done()
 
     def execute_single_qubit_gate(self, gate):
         logical_qubit = gate.qubits[0]
         circuit = gate.circuit
         qpu_id, physical_qubit = circuit.logical_to_physical[logical_qubit]
-        assert qpu_id == self.qpu_id, "单比特门的 QPU 与逻辑比特所在的 QPU 不一致"
+        assert qpu_id == self.qpu_id, "QPU for the single-qubit gate does not match the QPU where the logical qubit is located"
         with self.qubits[physical_qubit].request() as req:
             yield req
-            print(f"时间 {self.env.now}: QPU {self.qpu_id} 开始在电路 {circuit.circuit_id} 的逻辑比特 {logical_qubit} (物理比特 {physical_qubit}) 上执行单比特门 {gate.gate_type}")
+            print(f"Time {self.env.now}: QPU {self.qpu_id} starts executing single-qubit gate {gate.gate_type} on logical qubit {logical_qubit} (physical qubit {physical_qubit}) in circuit {circuit.circuit_id}")
             yield self.env.timeout(SINGLE_QUBIT_GATE_DELAY)
-            print(f"时间 {self.env.now}: QPU {self.qpu_id} 完成单比特门 {gate.gate_type} (电路 {circuit.circuit_id}, 逻辑比特 {logical_qubit})")
+            print(f"Time {self.env.now}: QPU {self.qpu_id} completes single-qubit gate {gate.gate_type} (circuit {circuit.circuit_id}, logical qubit {logical_qubit})")
 
     def execute_local_two_qubit_gate(self, gate):
         circuit = gate.circuit
         logical_qubit1, logical_qubit2 = gate.qubits
         qpu_id1, physical_qubit1 = circuit.logical_to_physical[logical_qubit1]
         qpu_id2, physical_qubit2 = circuit.logical_to_physical[logical_qubit2]
-        assert qpu_id1 == self.qpu_id == qpu_id2, "本地双比特门的 QPU 与逻辑比特所在的 QPU 不一致"
+        assert qpu_id1 == self.qpu_id == qpu_id2, "QPU for the local two-qubit gate does not match the QPU where the logical qubits are located"
         with self.qubits[physical_qubit1].request() as req1, self.qubits[physical_qubit2].request() as req2:
             yield req1 & req2
-            print(f"时间 {self.env.now}: QPU {self.qpu_id} 开始在电路 {circuit.circuit_id} 的逻辑比特 {logical_qubit1}, {logical_qubit2} 上执行本地双比特门 {gate.gate_type}")
+            print(f"Time {self.env.now}: QPU {self.qpu_id} starts executing local two-qubit gate {gate.gate_type} on logical qubits {logical_qubit1}, {logical_qubit2} in circuit {circuit.circuit_id}")
             yield self.env.timeout(TWO_QUBIT_GATE_DELAY)
-            print(f"时间 {self.env.now}: QPU {self.qpu_id} 完成本地双比特门 {gate.gate_type} (电路 {circuit.circuit_id})")
+            print(f"Time {self.env.now}: QPU {self.qpu_id} completes local two-qubit gate {gate.gate_type} (circuit {circuit.circuit_id})")
 
     def execute_remote_gate(self, gate):
         circuit = gate.circuit
-        # 获取本地涉及的逻辑比特和对应的物理比特
+        # Get local logical qubits and corresponding physical qubits
         local_logical_qubits = [q for q in gate.qubits if circuit.logical_to_physical[q][0] == self.qpu_id]
         local_physical_qubits = [circuit.logical_to_physical[q][1] for q in local_logical_qubits]
-        # 请求本地物理比特资源
+        # Request resources for local physical qubits
         data_qubit_requests = [self.qubits[qubit_id].request() for qubit_id in local_physical_qubits]
         yield simpy.events.AllOf(self.env, data_qubit_requests)
-        # 请求通信比特资源
+        # Request communication qubit resources
         comm_qubit_id, comm_qubit_request = yield self.env.process(self.get_available_comm_qubit())
-        # 参与的 QPU 列表
+        # List of participating QPUs
         other_qpus = [circuit.qpus[qpu_id] for qpu_id in gate.qpus_involved if qpu_id != self.qpu_id]
-        # 用于同步的事件列表
+        # List of synchronization events
         entanglement_events = []
         for qpu in other_qpus:
             entanglement_event = self.env.event()
             self.env.process(qpu.participate_in_remote_gate(self, gate, entanglement_event))
             entanglement_events.append(entanglement_event)
-        # 等待纠缠建立延迟
+        # Wait for entanglement delay
         yield self.env.timeout(ENTANGLEMENT_DELAY)
-        # 等待所有 QPU 准备就绪
+        # Wait for all QPUs to be ready
         yield simpy.events.AllOf(self.env, entanglement_events)
-        # 执行远程门
-        print(f"时间 {self.env.now}: QPU {self.qpu_id} 在电路 {circuit.circuit_id} 上执行远程门 {gate.gate_type}，涉及逻辑比特 {local_logical_qubits}")
+        # Execute the remote gate
+        print(f"Time {self.env.now}: QPU {self.qpu_id} executes remote gate {gate.gate_type} in circuit {circuit.circuit_id}, involving logical qubits {local_logical_qubits}")
         yield self.env.timeout(TWO_QUBIT_GATE_DELAY)
-        print(f"时间 {self.env.now}: QPU {self.qpu_id} 完成远程门 {gate.gate_type}")
-        # 释放资源
+        print(f"Time {self.env.now}: QPU {self.qpu_id} completes remote gate {gate.gate_type}")
+        # Release resources
         for req in data_qubit_requests:
             req.resource.release(req)
         self.release_comm_qubit(comm_qubit_request)
 
     def participate_in_remote_gate(self, initiating_qpu, gate, entanglement_event):
         circuit = gate.circuit
-        # 获取本地涉及的逻辑比特和对应的物理比特
+        # Get local logical qubits and corresponding physical qubits
         local_logical_qubits = [q for q in gate.qubits if circuit.logical_to_physical[q][0] == self.qpu_id]
         local_physical_qubits = [circuit.logical_to_physical[q][1] for q in local_logical_qubits]
-        # 请求本地物理比特资源
+        # Request resources for local physical qubits
         data_qubit_requests = [self.qubits[qubit_id].request() for qubit_id in local_physical_qubits]
         yield simpy.events.AllOf(self.env, data_qubit_requests)
-        # 请求通信比特资源
+        # Request communication qubit resources
         comm_qubit_id, comm_qubit_request = yield self.env.process(self.get_available_comm_qubit())
-        # 等待纠缠建立延迟
+        # Wait for entanglement delay
         yield self.env.timeout(ENTANGLEMENT_DELAY)
-        print(f"时间 {self.env.now}: QPU {self.qpu_id} 已准备好与 QPU {initiating_qpu.qpu_id} 执行远程门 {gate.gate_type} (电路 {circuit.circuit_id})")
-        # 通知发起的 QPU 已准备就绪
+        print(f"Time {self.env.now}: QPU {self.qpu_id} is ready to execute remote gate {gate.gate_type} with QPU {initiating_qpu.qpu_id} (circuit {circuit.circuit_id})")
+        # Notify the initiating QPU that it is ready
         entanglement_event.succeed()
-        # 等待远程门执行完成
+        # Wait for the remote gate to complete
         yield self.env.timeout(TWO_QUBIT_GATE_DELAY)
-        print(f"时间 {self.env.now}: QPU {self.qpu_id} 完成远程门 {gate.gate_type}")
-        # 释放资源
+        print(f"Time {self.env.now}: QPU {self.qpu_id} completes remote gate {gate.gate_type}")
+        # Release resources
         for req in data_qubit_requests:
             req.resource.release(req)
         self.release_comm_qubit(comm_qubit_request)
 
     def get_available_comm_qubit(self):
-        # 请求一个可用的通信比特
+        # Request an available communication qubit
         requests = []
         for qubit_id, resource in self.communication_qubits.items():
             request = resource.request()
             requests.append((qubit_id, request))
             if len(resource.queue) == 0 and len(resource.users) == 0:
-                # 立即可用
+                # Immediately available
                 yield request
                 return qubit_id, request
-        # 如果没有立即可用的通信比特，则等待任意一个
+        # If no communication qubit is immediately available, wait for any one
         request_dict = {request: qubit_id for qubit_id, request in requests}
         result = yield simpy.events.AnyOf(self.env, [req for _, req in requests])
         request = next(iter(result.events))
@@ -192,101 +192,68 @@ class QPU:
         return qubit_id, request
 
     def release_comm_qubit(self, request):
-        # 释放通信比特资源
+        # Release the communication qubit resource
         request.resource.release(request)
-
-    # def release_qubit(self, qubit_id):
-    #     # 释放物理比特资源
-    #     self.qubits[qubit_id].release()
 
 class Scheduler:
     def __init__(self, env, qpus, circuits):
         self.env = env
         self.qpus = qpus
-        self.circuits = circuits  # 待调度的电路列表
+        self.circuits = circuits  # List of circuits to be scheduled
         self.action = env.process(self.run())
         self.active_circuits = []
-        self.qubit_allocation = {}  # {QPU_ID: set(物理比特ID)}
+        self.qubit_allocation = {}  # {QPU_ID: set(physical_qubit_ID)}
         for qpu_id in qpus:
             self.qubit_allocation[qpu_id] = set()
         self.max_executed_circuit_id = 0
 
     def run(self):
         circuits_to_run = []
-        # circuit_id = 0
-        # while self.circuits:
-        tt_circuits_num = len(self.circuits)
-        # while circuit_id < tt_circuits_num:
+        total_circuits_num = len(self.circuits)
         if self.circuits:
-            # 直到没有电路可调度
-            while self.circuits: # 尝试执行尽可能多的电路，直到资源不足
+            # Keep trying to schedule circuits as long as resources are available
+            while self.circuits:
                 circuit_gates = self.circuits[0]
 
-                # print(f'circuit width: {max(qubit for gate in circuit_gates for qubit in gate["qubits"]) + 1}, available qubits: {all_available_physical_qubits_num}, all qubits: {all_available_physical_qubits}')
                 if not self.has_enough_qubits(circuit_gates):
-                    # yield self.env.timeout(1)  # 等待一段时间后重试
-                    print(f"时间 {self.env.now}: 调度器等待物理比特资源 for circuit {self.max_executed_circuit_id}")
+                    print(f"Time {self.env.now}: Scheduler waiting for physical qubit resources for circuit {self.max_executed_circuit_id}")
                     break
-                # circuit = Circuit(self.env, len(self.active_circuits) + len(circuits_to_run), circuit_gates, self.qpus, self)
+
                 circuit = Circuit(self.env, self.max_executed_circuit_id, circuit_gates, self.qpus, self)
                 allocation_successful = self.allocate_qubits(circuit)
-                print(f"时间 {self.env.now}: 电路 {self.max_executed_circuit_id} 分配物理比特 {'成功' if allocation_successful else '失败'}")
-                # print(f"时间 {self.env.now}: 当前物理比特占用情况 {self.qubit_allocation}")
+                print(f"Time {self.env.now}: Circuit {self.max_executed_circuit_id} allocated physical qubits {'successfully' if allocation_successful else 'unsuccessfully'}")
+
                 if allocation_successful:
                     self.circuits.pop(0)
                     circuits_to_run.append(circuit)
-                    print(f"时间 {self.env.now}: 电路 {self.max_executed_circuit_id} 开始执行")
-                    # yield circuit.completion_event
+                    print(f"Time {self.env.now}: Circuit {self.max_executed_circuit_id} starts execution")
                     circuits_to_run.append(circuit)
                     self.max_executed_circuit_id += 1
                 else:
-                    print(f"时间 {self.env.now}: 电路 {self.max_executed_circuit_id} 等待物理比特资源")
+                    print(f"Time {self.env.now}: Circuit {self.max_executed_circuit_id} waiting for physical qubit resources")
                     break
-            # 同时执行多个电路，无需等待
+            # Execute multiple circuits simultaneously
             for circuit in circuits_to_run:
                 self.active_circuits.append(circuit)
-            # break
-        yield self.env.timeout(0)  # 等待一段时间后重试
-        print(f"时间 {self.env.now}: 调度器完成一次调度")
+
+        yield self.env.timeout(0)
+        print(f"Time {self.env.now}: Scheduler completed a scheduling round")
 
     def has_enough_qubits(self, circuit_gates):
         all_available_physical_qubits = {}
         for qpu_id, qpu in self.qpus.items():
             all_available_physical_qubits[qpu_id] = set(qpu.qubits.keys()) - self.qubit_allocation[qpu_id]
 
-        all_available_physical_qubits_num = sum(len(qubits) for qubits in all_available_physical_qubits.values())
-        return max(qubit for gate in circuit_gates for qubit in gate['qubits']) + 1  <= all_available_physical_qubits_num
+        total_available_qubits_num = sum(len(qubits) for qubits in all_available_physical_qubits.values())
+        return max(qubit for gate in circuit_gates for qubit in gate['qubits']) + 1 <= total_available_qubits_num
 
-        # 检查电路是否有足够的物理比特可用
-        
-
-    def circuit_satisfied(self, circuit):
-        # 检查电路是否有足够的物理比特可用
-        num_logical_qubits = max(qubit for gate in circuit.gates for qubit in gate['qubits']) + 1
-        all_avaliable_physical_qubits = set()
-        for qpu_id, qpu in self.qpus.items():
-            all_avaliable_physical_qubits.update(set(qpu.qubits.keys()) - self.qubit_allocation[qpu_id])
-        if len(all_avaliable_physical_qubits) < num_logical_qubits:
-            return False
-        
-
-        return True
-
-    def decided_to_run(self, circuit):
-        return True
-       
     def allocate_qubits(self, circuit):
-        # 统计电路中涉及的逻辑比特数
+        # Count the number of logical qubits involved in the circuit
         num_logical_qubits = max(qubit for gate in circuit.gates for qubit in gate['qubits']) + 1
-        # 为电路分配物理比特
+        # Allocate physical qubits for the circuit
         circuit.logical_to_physical = {}
-        decided_to_run = self.decided_to_run(circuit)
-
-        if not decided_to_run:
-            return False
         
         for logical_qubit in range(num_logical_qubits):
-            # 查找可用的QPU和物理比特
             allocated = False
             for qpu_id, qpu in self.qpus.items():
                 available_qubits = set(qpu.qubits.keys()) - self.qubit_allocation[qpu_id]
@@ -294,59 +261,34 @@ class Scheduler:
                     physical_qubit = available_qubits.pop()
                     circuit.logical_to_physical[logical_qubit] = (qpu_id, physical_qubit)
                     self.qubit_allocation[qpu_id].add(physical_qubit)
-                    # print(f'circuit {circuit.circuit_id} allocate qubit {physical_qubit} on QPU {qpu_id}, crt_qubits_allocation: {self.qubit_allocation}')
                     allocated = True
                     break
-                
-        # for logical_qubit in range(num_logical_qubits):
-        #     # 查找可用的QPU和物理比特
-        #     allocated = False
-        #     for qpu_id, qpu in self.qpus.items():
-        #         available_qubits = set(qpu.qubits.keys()) - self.qubit_allocation[qpu_id]
-        #         if available_qubits:
-        #             physical_qubit = available_qubits.pop()
-        #             circuit.logical_to_physical[logical_qubit] = (qpu_id, physical_qubit)
-        #             self.qubit_allocation[qpu_id].add(physical_qubit)
-        #             allocated = True
-        #             # with qpu.qubits[physical_qubit].request() as req:
-        #             #     yield req
-        #             break
-            # if not allocated:
-        # else:
-        #     # 没有足够的物理比特可用，电路需要等待
-        #     print(f"时间 {self.env.now}: 电路 {circuit.circuit_id} 等待物理比特资源")
-        #     yield self.env.timeout(1)  # 等待一段时间后重试
-        #     yield self.env.process(self.allocate_qubits(circuit))
-        #     # return
-        # return satisfied
 
         return True
 
     def release_qubits(self, circuit):
-        # 释放电路占用的物理比特
-        print(f"时间 {self.env.now}: 电路 {circuit.circuit_id} 释放物理比特资源11111")
+        # Release the physical qubits occupied by the circuit
+        print(f"Time {self.env.now}: Circuit {circuit.circuit_id} releasing physical qubit resources")
         for qpu_id, physical_qubit in circuit.logical_to_physical.values():
             self.qubit_allocation[qpu_id].remove(physical_qubit)
-            # self.qpus[qpu_id].release_qubit(physical_qubit)
-
 
 def simulate(quantum_circuits, qpu_qubit_counts):
     env = simpy.Environment()
-    # 创建 QPU
+    # Create QPUs
     qpus = {}
     for qpu_id, qubit_counts in qpu_qubit_counts.items():
         num_computing_qubits = qubit_counts['computing']
         num_communication_qubits = qubit_counts['communication']
         qpus[qpu_id] = QPU(env, qpu_id, num_computing_qubits, num_communication_qubits)
 
-    # 创建调度器
+    # Create scheduler
     scheduler = Scheduler(env, qpus, quantum_circuits)
 
     env.run()
 
-# 示例用法
+# Example usage
 if __name__ == '__main__':
-    # 定义量子电路
+    # Define quantum circuits
     quantum_circuits = [
         [
             {'type': 'H', 'qubits': [0]},
@@ -366,11 +308,10 @@ if __name__ == '__main__':
         ],
     ]
 
-    # 每个 QPU 拥有的计算比特和通信比特数量
+    # Number of computing and communication qubits for each QPU
     qpu_qubit_counts = {
-        'QPU1': {'computing': 4, 'communication': 1},  # QPU1 有 4 个计算比特，2 个通信比特
-        'QPU2': {'computing': 2, 'communication': 1},  # QPU2 有 3 个计算比特，1 个通信比特
+        'QPU1': {'computing': 4, 'communication': 1},  # QPU1 has 4 computing qubits, 2 communication qubits
+        'QPU2': {'computing': 2, 'communication': 1},  # QPU2 has 3 computing qubits, 1 communication qubit
     }
 
     simulate(quantum_circuits, qpu_qubit_counts)
-
