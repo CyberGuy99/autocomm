@@ -299,12 +299,12 @@ if __name__ == '__main__':
         [
             {'type': 'Z', 'qubits': [0]},
             {'type': 'CNOT1', 'qubits': [0, 1]},
-            {'type': 'REMOTE_CZ', 'qubits': [0, 2]},
+            {'type': 'CZ', 'qubits': [0, 2]},
         ],
         [
             {'type': 'Z', 'qubits': [0]},
             {'type': 'CNOT1', 'qubits': [0, 1]},
-            {'type': 'REMOTE_CZ', 'qubits': [0, 4]},
+            {'type': 'CZ', 'qubits': [0, 4]},
         ],
     ]
 
