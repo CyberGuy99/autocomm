@@ -1,4 +1,4 @@
-from gate_util import *
+from autocomm_v1.gate_util import *
 
 # you can write your own
 # lblk and rblk are each an array of gates: [gate1, gate2, ...]

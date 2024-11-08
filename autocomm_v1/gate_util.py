@@ -49,6 +49,18 @@ def build_RX_gate(qb, angle, global_phase=1):
 def build_H_gate(qb):
     return build_gate("H", [qb])
 
+def build_Z_gate(qb):
+    return build_gate("Z", [qb])
+
+def build_M_gate(qb):
+    return build_gate("M", [qb])
+
+def build_classical_CX_gate(ctrl, target):
+    return build_gate("class-CX", [ctrl, target])
+
+def build_classical_CZ_gate(ctrl, target):
+    return build_gate("class-CZ", [ctrl, target])
+
 def build_CX_gate(ctrl, target):
     return build_gate("CX", [ctrl, target])
 

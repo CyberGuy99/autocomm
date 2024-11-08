@@ -2,7 +2,7 @@ import numpy as np
 import pymetis
 import cirq
 
-from util import dict_append, dict_num_add
+from utils.util import dict_append, dict_num_add
 
 
 

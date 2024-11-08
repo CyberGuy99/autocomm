@@ -1,4 +1,6 @@
 import simpy
+from autocomm_v1.autocomm import full_autocomm
+from autocomm_v1.final_circuit import auto_to_circ
 
 # Define delay times
 SINGLE_QUBIT_GATE_DELAY = 1
@@ -285,6 +287,18 @@ def simulate(quantum_circuits, qpu_qubit_counts):
     scheduler = Scheduler(env, qpus, quantum_circuits)
 
     env.run()
+
+def get_circuit_input(gate_list, qubit_to_node, refine_iter_cnt=3):
+    if type(qubit_to_node) is list:
+        qubit_to_node = {i: node for i, node in enumerate(qubit_to_node)}
+
+    auto_gates, _, _ = full_autocomm(gate_list=gate_list, \
+                               qubit_node_mapping=qubit_to_node, refine_iter_cnt=refine_iter_cnt)
+
+    return [{'type': gate[0], 'qubits': gate[1], \
+            'params': gate[2], 'global_phase': gate[3]} \
+            for gate in auto_to_circ(auto_gates, qubit_to_node)]
+
 
 # Example usage
 if __name__ == '__main__':

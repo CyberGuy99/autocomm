@@ -1,11 +1,17 @@
 import random
 from numpy import pi
-from gate_util import build_H_gate, build_CX_gate, build_RZ_gate, build_toffoli_gate
-from autocomm import comm_aggregate, comm_assign, comm_schedule
+from autocomm_v1.gate_util import build_H_gate, build_CX_gate, build_RZ_gate, build_toffoli_gate
+from autocomm_v1.autocomm import comm_aggregate, comm_assign, comm_schedule, full_autocomm
 
-def run_experiment(circuit_func, num_q=100, qb_per_node=10, refine_iter_cnt=3, verbose=False):
+def run_experiment(circuit_func, num_q=100, qb_per_node=10, refine_iter_cnt=3, verbose=False, do_full=False):
     gate_list, qubit_node_mapping = circuit_func(num_q, qb_per_node)
     
+    if do_full:
+        _, epr_cnt, all_latency = full_autocomm(gate_list=gate_list, \
+                                                         qubit_node_mapping=qubit_node_mapping, \
+                                                         refine_iter_cnt=refine_iter_cnt, \
+                                                         verbose=verbose)
+
     g_list = comm_aggregate(gate_list, qubit_node_mapping, refine_iter_cnt=refine_iter_cnt)
     assigned_gate_block_list = comm_assign(g_list, qubit_node_mapping)
     

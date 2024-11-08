@@ -6,7 +6,7 @@ from cirq.circuits import InsertStrategy
 
 from data_structures import Block, Pair, PairAggregationSet
 from qubit_partition import pymetis_partition
-from util import dict_append, dict_num_add
+from utils.util import dict_append, dict_num_add
 
 DEFAULT_QUBITS_PER_NODE = 2
 VERBOSE = True

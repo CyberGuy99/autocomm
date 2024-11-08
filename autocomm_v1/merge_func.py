@@ -1,5 +1,5 @@
-from gate_util import *
-from commute_func import *
+from autocomm_v1.gate_util import *
+from autocomm_v1.commute_func import *
 
 def is_comm_block(block):
     return type(block[0]) == list
