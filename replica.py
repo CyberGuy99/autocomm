@@ -1,5 +1,5 @@
 import cirq
-from util import dict_append
+from utils.util import dict_append
 
 sync_gates = {cirq.H, cirq.Rx, cirq.Ry, cirq.CNOT}
 
