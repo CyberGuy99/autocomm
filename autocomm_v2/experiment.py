@@ -1,16 +1,22 @@
 import random
 from numpy import pi
-from gate_util import build_H_gate, build_CX_gate, build_RZ_gate, build_toffoli_gate
-from gate_util import gateblock_list_str
-from autocomm import comm_aggregate, comm_assign, comm_schedule
+from autocomm_v2.gate_util import build_H_gate, build_CX_gate, build_RZ_gate, build_toffoli_gate
+from autocomm_v2.gate_util import gateblock_list_str
+from autocomm_v2.autocomm import comm_aggregate, comm_assign, comm_schedule, full_autocomm
 
-def run_experiment(circuit_func, num_q=100, qb_per_node=10, refine_iter_cnt=3, verbose=False):
+def run_experiment(circuit_func, num_q=100, qb_per_node=10, refine_iter_cnt=3, verbose=False, do_full=False):
     gate_list, qubit_node_mapping = circuit_func(num_q, qb_per_node)
 
-    g_list = comm_aggregate(gate_list, qubit_node_mapping, refine_iter_cnt=refine_iter_cnt)
-    assigned_gate_block_list = comm_assign(g_list, qubit_node_mapping)
-    
-    epr_cnt, all_latency, assigned_gate_block_list1 = comm_schedule(assigned_gate_block_list, qubit_node_mapping, refine_iter_cnt=num_q//qb_per_node)
+    if do_full:
+        _, epr_cnt, all_latency = full_autocomm(gate_list=gate_list, \
+                                                         qubit_node_mapping=qubit_node_mapping, \
+                                                         refine_iter_cnt=refine_iter_cnt, \
+                                                         verbose=verbose)
+
+    else:
+        g_list = comm_aggregate(gate_list, qubit_node_mapping, refine_iter_cnt=refine_iter_cnt)
+        assigned_gate_block_list = comm_assign(g_list, qubit_node_mapping)
+        epr_cnt, all_latency, assigned_gate_block_list1 = comm_schedule(assigned_gate_block_list, qubit_node_mapping, refine_iter_cnt=num_q//qb_per_node)
     
     if verbose:
         print('--------------------------------------------')

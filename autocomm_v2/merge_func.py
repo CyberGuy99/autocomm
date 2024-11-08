@@ -1,6 +1,6 @@
 from typing import Union
-from autocomm_v2.gate_util import *
-from autocomm_v2.commute_func import *
+from autocomm_v2.gate_util import sanity_check_count, deepcopy, get_target
+from autocomm_v2.commute_func import commute_func_right
 from autocomm_v2.gate_util import GateBlock, Gate
 
 def is_comm_block(block):

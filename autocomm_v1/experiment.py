@@ -12,10 +12,10 @@ def run_experiment(circuit_func, num_q=100, qb_per_node=10, refine_iter_cnt=3, v
                                                          refine_iter_cnt=refine_iter_cnt, \
                                                          verbose=verbose)
 
-    g_list = comm_aggregate(gate_list, qubit_node_mapping, refine_iter_cnt=refine_iter_cnt)
-    assigned_gate_block_list = comm_assign(g_list, qubit_node_mapping)
-    
-    epr_cnt, all_latency, assigned_gate_block_list1 = comm_schedule(assigned_gate_block_list, qubit_node_mapping, refine_iter_cnt=num_q//qb_per_node)
+    else:
+        g_list = comm_aggregate(gate_list, qubit_node_mapping, refine_iter_cnt=refine_iter_cnt)
+        assigned_gate_block_list = comm_assign(g_list, qubit_node_mapping)
+        epr_cnt, all_latency, assigned_gate_block_list1 = comm_schedule(assigned_gate_block_list, qubit_node_mapping, refine_iter_cnt=num_q//qb_per_node)
     
     if verbose:
         print('\n'.join([str(g) for g in assigned_gate_block_list1]))

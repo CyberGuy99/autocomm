@@ -1,10 +1,11 @@
 from typing import Union
 
-from gate_util import *
-from commute_func import *
-from merge_func import *
+from utils.util import reverse_map
+from autocomm_v2.gate_util import Gate, GateBlock
+from autocomm_v2.gate_util import pattern_merged_circ, sanity_check_count, gateblock_list_str
 
-from gate_util import Gate, GateBlock, gateblock_list_str
+from autocomm_v2.commute_func import commute_func_right
+from autocomm_v2.merge_func import consecutive_merge, linear_merge_iter, tp_comm_merge_iter
 
 # assume gates are formed of CX and single-qubit gates. It is okay to have other gates if related rules are defined
 def comm_aggregate(gate_list:list[Gate], qubit_node_mapping:list[int], allow_gate_pattern:bool=True, refine_iter_cnt:int=3, check_commute_func=commute_func_right):
@@ -361,6 +362,22 @@ def comm_schedule(assigned_gate_block_list:list[Union[Gate, GateBlock]], qubit_n
     #blocks = [g for g in assigned_gate_block_list if type(g) is GateBlock]
     return epr_cnt, all_latency, assigned_gate_block_list
 
+def full_autocomm(gate_list, qubit_node_mapping, refine_iter_cnt=3, verbose=False):
+    if type(qubit_node_mapping) is list:
+        qubit_node_mapping = {i: node for i, node in enumerate(qubit_node_mapping)}
+
+    num_q = len(qubit_node_mapping.keys())
+    node_qubit_mapping = reverse_map(qubit_node_mapping)
+    qb_per_node = max([len(values) for _, values in node_qubit_mapping.items()])
+
+    agg_list = comm_aggregate(gate_list, qubit_node_mapping, refine_iter_cnt=refine_iter_cnt)
+    assigned_gate_block_list = comm_assign(agg_list, qubit_node_mapping)
+    epr_cnt, all_latency, final_list = comm_schedule(assigned_gate_block_list, qubit_node_mapping, refine_iter_cnt=num_q//qb_per_node)
+
+    if verbose:
+        print(epr_cnt, all_latency)
+    return final_list, epr_cnt, all_latency
 
 if __name__ == "__main__":
-    print(comm_assign([[[],[["CX",[0,1]],["RX",[0]],["RX",[1]],["CX",[0,1]]]]],[0,2]))
+    #print(comm_assign([[[],[["CX",[0,1]],["RX",[0]],["RX",[1]],["CX",[0,1]]]]],[0,2]))
+    print()
