@@ -2,6 +2,8 @@ import simpy
 from autocomm_v2.gate_util import Gate
 from autocomm_v2.autocomm import full_autocomm
 from autocomm_v2.final_circuit import auto_to_circ
+from replica import get_lifetimes
+from utils.util import dict_num_add
 
 # Define delay times
 SINGLE_QUBIT_GATE_DELAY = 1
@@ -210,6 +212,48 @@ class Scheduler:
             self.qubit_allocation[qpu_id] = set()
         self.max_executed_circuit_id = 0
 
+    def segment_circuit(self, circuit_index):
+        if circuit_index >= len(self.circuits):
+            return
+        circ = self.circuits[circuit_index]
+        lifetimes, q_idxs = get_lifetimes(input_replica=circ)
+        num_qubits = max(q_idxs) + 1
+        og_lifetimes = lifetimes.copy()
+
+        qubit_segment_idx = dict({i: 0 for i in range(num_qubits)})
+        def access_lifetime(qubit, delta=0):
+            if not delta:
+                return lifetimes[qubit][qubit_segment_idx[qubit]]
+            lifetimes[qubit][qubit_segment_idx[qubit]] += delta
+            return None
+            
+
+
+        #curr_lifetimes = dict({i: lifetimes[i][curr_segment] for i, curr_segment in qubit_segment_idx.items()})
+
+        new_gates = []
+        for gate in circ:
+            for qubit in gate['qubits']:
+                # check if no more lifetimes exist (no need to add syncs)
+                if qubit_segment_idx[qubit] >= len(lifetimes[qubit]):
+                    continue
+
+                curr_lifetime = access_lifetime(qubit)
+                if curr_lifetime == 1:
+                    # add sync gate for qubit
+                    new_gates.append(Scheduler._build_sync(qubit))
+                    qubit_segment_idx[qubit] += 1
+                    continue
+                # decrement lifetime
+                access_lifetime(qubit, delta=-1)
+
+            new_gates.append(gate)
+
+        return new_gates
+
+    def _build_sync(q_idx):
+        return {'type': 'SYNC', 'qubits': q_idx}
+
     def run(self):
         circuits_to_run = []
         total_circuits_num = len(self.circuits)
@@ -286,6 +330,8 @@ def simulate(quantum_circuits, qpu_qubit_counts):
 
     # Create scheduler
     scheduler = Scheduler(env, qpus, quantum_circuits)
+    for i in range(len(quantum_circuits)):
+        print('\n'.join(str(g) for g in scheduler.segment_circuit(i)))
 
     env.run()
 
@@ -329,4 +375,6 @@ if __name__ == '__main__':
         'QPU2': {'computing': 2, 'communication': 1},  # QPU2 has 3 computing qubits, 1 communication qubit
     }
 
+    lifetime_dict, _ = get_lifetimes(input_replica=quantum_circuits[0])
+    print(lifetime_dict)
     simulate(quantum_circuits, qpu_qubit_counts)
