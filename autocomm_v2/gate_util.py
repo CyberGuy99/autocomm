@@ -70,8 +70,10 @@ def sanity_check_count(l, qubit_node_mapping):
     return blocks, block_target_cnts
 
 def get_target(qubits, source, qubit_node_mapping):
-    if len(qubits) == 1:
+    if type(qubits) is int:
         return qubit_node_mapping[qubits]
+    if len(qubits) == 1:
+        return qubit_node_mapping[qubits[0]]
     assert len(qubits) == 2
     target_idx = int(source == qubits[0])
     return qubit_node_mapping[qubits[target_idx]]
@@ -134,6 +136,11 @@ class GateBlock:
               'Multiple targets for GateBlock'
 
         return self.source, self.targets[0]
+    
+    def change_gates(self, new_gates:list[Gate]):
+        new_block = deepcopy(self)
+        new_block.gates = new_gates
+        return new_block
 
     '''
     def add_gate(self, gate:Gate, target:int=-1, qubit_node_mapping=None):
@@ -206,6 +213,18 @@ def build_RX_gate(qb, angle, global_phase=1):
 
 def build_H_gate(qb):
     return build_gate("H", [qb])
+
+def build_Z_gate(qb):
+    return build_gate("Z", [qb])
+
+def build_M_gate(qb):
+    return build_gate("M", [qb])
+
+def build_classical_CX_gate(ctrl, target):
+    return build_gate("class-CX", [ctrl, target])
+
+def build_classical_CZ_gate(ctrl, target):
+    return build_gate("class-CZ", [ctrl, target])
 
 def build_CX_gate(ctrl, target):
     return build_gate("CX", [ctrl, target])

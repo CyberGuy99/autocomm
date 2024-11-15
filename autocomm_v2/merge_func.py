@@ -339,9 +339,11 @@ def tp_comm_merge_iter(gate_block_list:list[Union[Gate, GateBlock]], qubit_node_
                                         for new_rblk in cur_gb1.gates:
                                             new_part_lblk = []
                                             for lg_blk in reversed(part_lblk):
-                                                flag, _, _, new_lblk_next, new_rblk_next = check_commute_func(lg_blk, new_rblk)
+                                                l_blk_l = lg_blk if type(lg_blk) is list else [lg_blk]
+                                                r_blk_l = new_rblk if type(new_rblk) is list else [new_rblk]
+                                                flag, _, _, new_lblk_next, new_rblk_next = check_commute_func(l_blk_l, r_blk_l)
                                                 if flag:
-                                                    new_part_lblk.append(new_lblk_next)
+                                                    new_part_lblk.extend(new_lblk_next)
                                                     new_rblk = new_rblk_next
                                                 else:
                                                     _okay_merge = False
@@ -349,15 +351,16 @@ def tp_comm_merge_iter(gate_block_list:list[Union[Gate, GateBlock]], qubit_node_
                                             if _okay_merge is False:
                                                 break
                                             else:
-                                                part_rblk.append(new_rblk)
+                                                part_rblk.extend(new_rblk)
                                                 part_lblk = new_part_lblk[::-1]
                                         if _okay_merge is True:
-                                            new_lblk_list.append([lg[0]]+part_lblk)
+                                            new_lblk_list.append(lg.change_gates(part_lblk))
                                     else:
                                         new_lblk = [lg]
                                         part_rblk = []
                                         for nrbidx, new_rblk in enumerate(cur_gb1.gates):
-                                            flag, _, _, new_lblk_next, new_rblk_next = check_commute_func(new_lblk, [new_rblk])
+                                            r_blk_l = new_rblk if type(new_rblk) is list else [new_rblk]
+                                            flag, _, _, new_lblk_next, new_rblk_next = check_commute_func(new_lblk, r_blk_l)
                                             if flag:
                                                 new_rblk = new_rblk_next
                                                 new_lblk =  new_lblk_next                                      
@@ -366,10 +369,10 @@ def tp_comm_merge_iter(gate_block_list:list[Union[Gate, GateBlock]], qubit_node_
                                                 for llg in reversed(new_lblk):
                                                     llgqb = llg.qubits
                                                     if len(llgqb) == 1:
-                                                        new_rblk = [llg] + [new_rblk]
+                                                        new_rblk = [llg] + r_blk_l
                                                     elif len(llgqb) == 2:
                                                         if qubit_node_mapping[llgqb[0]] == qubit_node_mapping[llgqb[1]] and qubit_node_mapping[llgqb[0]] == get_target(new_rblk.qubits, cur_gb1.source, qubit_node_mapping):
-                                                            new_rblk = [llg] + [new_rblk]
+                                                            new_rblk = [llg] + r_blk_l
                                                         else:
                                                             _okay_merge = False
                                                             break
@@ -380,7 +383,7 @@ def tp_comm_merge_iter(gate_block_list:list[Union[Gate, GateBlock]], qubit_node_
                                                     break
                                                 else:
                                                     new_lblk = []
-                                            part_rblk.append(new_rblk)
+                                            part_rblk.extend(new_rblk)
                                         if _okay_merge is True:
                                             new_lblk_list.extend(new_lblk[::-1])
                                     if _okay_merge is False:

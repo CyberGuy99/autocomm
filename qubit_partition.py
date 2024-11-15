@@ -1,10 +1,27 @@
+from typing import Union
 import numpy as np
-import pymetis
+
 import cirq
+import cirq.circuits
+import pymetis
 
 from autocomm_v2.gate_util import Gate
 from utils.util import dict_append, dict_num_add, reverse_map
 
+
+def _pymetis_gate_list_scan(gate_list:Union[list[cirq.Moment], list[Gate]], adj_dict, weight_dict, idx_func):
+    for gate in gate_list:
+        l = len(gate.qubits)
+        assert l <= 2, f'Unexpected {l}-qubit gate'
+        if l == 1:
+            continue
+
+        q1_idx, q2_idx = idx_func(gate.qubits)
+        dict_append(adj_dict, key=q1_idx, append_value=q2_idx)
+        dict_append(adj_dict, key=q2_idx, append_value=q1_idx)
+
+        dict_num_add(weight_dict, key=(q1_idx, q2_idx), add_value=1)
+        dict_num_add(weight_dict, key=(q2_idx, q1_idx), add_value=1)
 
 
 def pymetis_partition(num_nodes: int, gate_list: list[Gate] = None, cirq_circ: cirq.Circuit = None):
@@ -17,19 +34,12 @@ def pymetis_partition(num_nodes: int, gate_list: list[Gate] = None, cirq_circ: c
         qubits_to_idxs = dict({q: idx for idx, q in enumerate(cirq_circ.all_qubits)})
         num_qubits = len(qubits_to_idxs.keys())
 
+        def get_qubit_idxs(qubits):
+            return (qubits_to_idxs[q] for q in qubits)
 
         for layer in cirq_circ:
-            for op in layer:
-                l = len(op.qubits)
-                assert l <= 2, f'Unexpected {l}-qubit gate'
-                if l == 1:
-                    continue
+            _pymetis_gate_list_scan(gate_list=layer, adj_dict=adj_dict, weight_dict=weight_dict, idx_func=get_qubit_idxs)
 
-                q1_idx, q2_idx = (qubits_to_idxs[q] for q in op.qubits)
-                dict_append(adj_dict, key=q1_idx, append_value=q2_idx)
-                dict_append(adj_dict, key=q2_idx, append_value=q1_idx)
-
-                dict_num_add(weight_dict, key={q1_idx, q2_idx}, add_value=1)
     elif gate_list:
         qubit_indices = set()
         for gate in gate_list:
@@ -37,18 +47,12 @@ def pymetis_partition(num_nodes: int, gate_list: list[Gate] = None, cirq_circ: c
                 qubit_indices.add(q)
         
         num_qubits = max(qubit_indices) + 1
+        print('Num Qubits:', num_qubits)
 
-        for gate in gate_list:
-            l = len(gate.qubits)
-            assert l <= 2, f'Unexpected {l}-qubit gate'
-            if l == 1:
-                continue
+        def get_qubit_idxs(qubits):
+            return tuple(q for q in qubits)
+        _pymetis_gate_list_scan(gate_list=gate_list, adj_dict=adj_dict, weight_dict=weight_dict, idx_func=get_qubit_idxs)
 
-            q1_idx, q2_idx = gate.qubits[0], gate.qubits[1]
-            dict_append(adj_dict, key=q1_idx, append_value=q2_idx)
-            dict_append(adj_dict, key=q2_idx, append_value=q1_idx)
-
-            dict_num_add(weight_dict, key={q1_idx, q2_idx}, add_value=1)
     else:
         raise RuntimeError("Invalid Input for Pymetis Partition")
     
@@ -62,9 +66,9 @@ def pymetis_partition(num_nodes: int, gate_list: list[Gate] = None, cirq_circ: c
         curr_adjs = adj_dict[q_idx]
         adjs.extend(curr_adjs)
 
-        weights.extend( [weight_dict[{q_idx, adj}] for adj in curr_adjs] )
+        weights.extend( [weight_dict[(q_idx, adj)] for adj in curr_adjs] )
 
-
+    adj_loc.append(len(weights))
 
 
     ncuts, membership = pymetis.part_graph(num_nodes, xadj=adj_loc, adjncy=adjs, eweights=weights)
@@ -91,3 +95,17 @@ def pymetis_partition(num_nodes: int, gate_list: list[Gate] = None, cirq_circ: c
 
 def OEE():
     pass
+
+
+if __name__ == '__main__':
+    from autocomm_v2.experiment import CircuitGen
+    BV = CircuitGen.BV
+    QFT = CircuitGen.QFT
+    RCA = CircuitGen.RCA
+    N = 10
+    b_gl, _ = BV(100, N)
+    r_gl, _ = RCA(100, N)
+    q_gl, _ = QFT(100, N)
+    q_n, n_q = pymetis_partition(N, gate_list=q_gl)
+    print(q_n)
+    print(n_q)

@@ -1,3 +1,5 @@
+from collections.abc import Iterable
+
 def dict_append(d, key, append_value):
     if key not in d:
         d[key] = []
@@ -12,7 +14,7 @@ def reverse_map(m, auto_convert=True):
     new_m = dict()
 
     for key, val in m.items():
-        if type(val) is list:
+        if isinstance(val, Iterable):
             for v in val:
                 dict_append(new_m, v, key)
         else:

@@ -90,14 +90,14 @@ def comm_assign(gate_block_list:list[GateBlock], qubit_node_mapping:list[int]):
                             break
                 # assuming all gates in the gateblock have the same source, target
                 source_qb, target_node = _gqb[0], qubit_node_mapping[_gqb[1]]
-                new_comm_block: list[GateBlock] = _comm_block_tag(source_qb, target_node, gb.gates, qubit_node_mapping)
-                if new_comm_block[0].is_cat:
+                new_comm_block: GateBlock  = _comm_block_tag(source_qb, target_node, gb.gates, qubit_node_mapping)
+                if new_comm_block.is_cat:
                     # if cat, append
                     assigned_gate_block_list.append(new_comm_block)
                 else:
                     # if not cat, try swapping source,target and checking again
                     source_qb, target_node = _gqb[1], qubit_node_mapping[_gqb[0]]
-                    new_comm_block: list[GateBlock] = _comm_block_tag(source_qb, target_node, gb.gates, qubit_node_mapping)
+                    new_comm_block: GateBlock = _comm_block_tag(source_qb, target_node, gb.gates, qubit_node_mapping)
                     assigned_gate_block_list.append(new_comm_block)
             else:
                 source_qb, target_node = gb.get_source_target(qubit_node_mapping)

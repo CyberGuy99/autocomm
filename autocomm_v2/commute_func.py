@@ -1,3 +1,4 @@
+import os
 from numpy import nan
 import pandas 
 
@@ -20,7 +21,6 @@ def commute_func_right(lblk:list[Gate], rblk:list[Gate]): # right to left
             new_rg = rg
             for cur_lg in reversed(cur_check_point):
                 is_commute, new_check_point, new_rg = find_commutation(df, cur_lg, new_rg)
-
                 if not is_commute: 
                     return False, lgidx, rgidx, [], []
                 else:
@@ -90,6 +90,8 @@ def commute_transform(g:Gate, transform:str):
     return l_dict['new_g'] if 'new_g' in l_dict else None
 
 def find_commutation(df:pandas.DataFrame, lg:Gate, rg:Gate):
+    if (lg.type,rg.type) not in df.index:
+        return False, lg, rg
     options:pandas.Series = df.loc[lg.type, rg.type]
     opt_idx = -1
     for idx, conds in enumerate(options[COND_KEY]):
@@ -131,13 +133,18 @@ def find_commutation(df:pandas.DataFrame, lg:Gate, rg:Gate):
 
 
 TABLE_FILE = 'commute.xlsx'
+MAIN_DIR = 'autocomm_v2'
 COLS = 'A:E'
 TABLE_INDEX = [0,1]
-NROWS = 128
+NROWS = 129
 
 def prepare_commute_table(table_file=None):
     if not table_file:
         table_file = TABLE_FILE
+    
+    d = os.getcwd()
+    if d.endswith('autocomm'):
+        table_file = os.path.join(d, MAIN_DIR, table_file)
 
     df = pandas.read_excel(table_file, index_col=TABLE_INDEX, usecols=COLS, nrows=NROWS)
     assert len(df.index[0]) + len(df.columns) == (ord(COLS[-1]) - ord(COLS[0]) + 1)
